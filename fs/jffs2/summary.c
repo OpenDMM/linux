@@ -26,6 +26,8 @@
 
 int jffs2_sum_init(struct jffs2_sb_info *c)
 {
+	uint32_t sum_size = max_t(uint32_t, c->sector_size, MAX_SUMMARY_SIZE);
+
 	c->summary = kmalloc(sizeof(struct jffs2_summary), GFP_KERNEL);
 
 	if (!c->summary) {
@@ -35,7 +37,7 @@ int jffs2_sum_init(struct jffs2_sb_info *c)
 
 	memset(c->summary, 0, sizeof(struct jffs2_summary));
 
-	c->summary->sum_buf = vmalloc(c->sector_size);
+	c->summary->sum_buf = kmalloc(sum_size, GFP_KERNEL);
 
 	if (!c->summary->sum_buf) {
 		JFFS2_WARNING("Can't allocate buffer for writing out summary information!\n");
@@ -54,7 +56,7 @@ void jffs2_sum_exit(struct jffs2_sb_info *c)
 
 	jffs2_sum_disable_collecting(c->summary);
 
-	vfree(c->summary->sum_buf);
+	kfree(c->summary->sum_buf);
 	c->summary->sum_buf = NULL;
 
 	kfree(c->summary);
@@ -654,7 +656,7 @@ crc_err:
 /* Write summary data to flash - helper function for jffs2_sum_write_sumnode() */
 
 static int jffs2_sum_write_data(struct jffs2_sb_info *c, struct jffs2_eraseblock *jeb,
-					uint32_t infosize, uint32_t datasize, int padsize)
+				uint32_t infosize, uint32_t datasize, int padsize)
 {
 	struct jffs2_raw_summary isum;
 	union jffs2_sum_mem *temp;
@@ -664,6 +666,26 @@ static int jffs2_sum_write_data(struct jffs2_sb_info *c, struct jffs2_eraseblock
 	void *wpage;
 	int ret;
 	size_t retlen;
+
+	if (padsize + datasize > MAX_SUMMARY_SIZE) {
+		/* It won't fit in the buffer. Abort summary for this jeb */
+		jffs2_sum_disable_collecting(c->summary);
+
+		JFFS2_WARNING("Summary too big (%d data, %d pad) in eraseblock at %08x\n",
+			      datasize, padsize, jeb->offset);
+		/* Non-fatal */
+		return 0;
+	}
+	/* Is there enough space for summary? */
+	if (padsize < 0) {
+		/* don't try to write out summary for this jeb */
+		jffs2_sum_disable_collecting(c->summary);
+
+		JFFS2_WARNING("Not enough space for summary, padsize = %d\n",
+			      padsize);
+		/* Non-fatal */
+		return 0;
+	}
 
 	memset(c->summary->sum_buf, 0xff, datasize);
 	memset(&isum, 0, sizeof(isum));
@@ -810,7 +832,7 @@ int jffs2_sum_write_sumnode(struct jffs2_sb_info *c)
 {
 	int datasize, infosize, padsize;
 	struct jffs2_eraseblock *jeb;
-	int ret;
+	int ret = 0;
 
 	dbg_summary("called\n");
 
@@ -829,16 +851,6 @@ int jffs2_sum_write_sumnode(struct jffs2_sb_info *c)
 	padsize = jeb->free_size - infosize;
 	infosize += padsize;
 	datasize += padsize;
-
-	/* Is there enough space for summary? */
-	if (padsize < 0) {
-		/* don't try to write out summary for this jeb */
-		jffs2_sum_disable_collecting(c->summary);
-
-		JFFS2_WARNING("Not enough space for summary, padsize = %d\n", padsize);
-		spin_lock(&c->erase_completion_lock);
-		return 0;
-	}
 
 	ret = jffs2_sum_write_data(c, jeb, infosize, datasize, padsize);
 	spin_lock(&c->erase_completion_lock);
