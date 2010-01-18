@@ -2548,6 +2548,7 @@ EXPORT_SYMBOL(bcmemac_dump);
 
 static void bcmemac_getMacAddr(void)
 {
+#if 0
 	extern int gNumHwAddrs;
 	extern unsigned char* gHwAddrs[];
 	int i;
@@ -2558,6 +2559,20 @@ static void bcmemac_getMacAddr(void)
    	} else {
 		printk(KERN_ERR "%s: No MAC addresses defined\n", __FUNCTION__);
 	}
+#else
+	/* we rip the address set by the bootloader */
+	uint32 pm0DataLo, pm0DataHi;
+
+	pm0DataLo = readl((void *)0xB0080058);
+	pm0DataHi = readl((void *)0xB008005C);
+
+	g_flash_eaddr[0] = (pm0DataHi & 0x0000FF00) >> 8;
+	g_flash_eaddr[1] = (pm0DataHi & 0x000000FF);
+	g_flash_eaddr[2] = (pm0DataLo & 0xFF000000) >> 24;
+	g_flash_eaddr[3] = (pm0DataLo & 0x00FF0000) >> 16;
+	g_flash_eaddr[4] = (pm0DataLo & 0x0000FF00) >> 8;
+	g_flash_eaddr[5] = (pm0DataLo & 0x000000FF);
+#endif
 }
 
 #if defined(CONFIG_BRCM_PM)
