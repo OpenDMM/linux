@@ -195,11 +195,12 @@ config BCMINTEMAC_7038
 		|| MIPS_BCM7402 || MIPS_BCM7402S || MIPS_BCM7440 \
 		|| MIPS_BCM7402B0S || MIPS_BCM7403 || MIPS_BCM7405 \
 		|| MIPS_BCM7325 || MIPS_BCM7335 || MIPS_BCM3548 \
-		|| MIPS_BCM7601 || MIPS_BCM7336
+		|| MIPS_BCM7601 || MIPS_BCM7336 || MIPS_BCM7635
 	select CRC32
 	help 
 	  Broadcom Internal MAC 100 Mbps Ethernet controller 
 	  for BCM7038, BCM7400, BCM7401 & BCM7405 STBs
+source "drivers/net/brcmint7038/Kconfig"
 
 config BCMINTEMAC_7038_STREAMING
 	bool "Extra buffers for streaming applications"
@@ -238,7 +239,7 @@ config BCMUMAC
 	select CRC32
 	help
 	  Broadcom internal GEMAC controller.
-
+source "drivers/net/brcmunimac/Kconfig"
 source "drivers/net/arm/Kconfig"
 
 config MACE

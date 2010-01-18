@@ -112,6 +112,14 @@ EXPORT_SYMBOL(gNandCS);
 int gNumNand = 0;
 EXPORT_SYMBOL(gNumNand);
 
+/*
+ * NAND controller timing parameters
+ */
+uint32_t gNandTiming1;
+uint32_t gNandTiming2;
+EXPORT_SYMBOL(gNandTiming1);
+EXPORT_SYMBOL(gNandTiming2);
+
 /* SATA interpolation */
 int gSataInterpolation = 0;
 EXPORT_SYMBOL(gSataInterpolation);
@@ -146,13 +154,7 @@ __default_get_discontig_RAM_size(void)
 unsigned long (* __get_discontig_RAM_size) (void) = __default_get_discontig_RAM_size;
 EXPORT_SYMBOL(__get_discontig_RAM_size);
 
-#if defined( CONFIG_MIPS_BCM7400 ) || defined( CONFIG_MIPS_BCM7325 ) || \
-	defined( CONFIG_MIPS_BCM7440 ) || defined(CONFIG_MIPS_BCM7601)
-#define CONSOLE_KARGS " console=uart,mmio,0x10400b00,115200n8"
-
-#else
 #define CONSOLE_KARGS " console=ttyS0,115200"
-#endif
 
 #define RW_KARGS " rw"
 #define DEFAULT_KARGS CONSOLE_KARGS RW_KARGS
@@ -229,7 +231,6 @@ unsigned long
 get_RAM_size(void)
 {
 	BUG_ON(! brcm_dram0_size);
-printk("%s: brcm_dram0_size=%08x\n", __FUNCTION__, brcm_dram0_size);
 	return(brcm_dram0_size);
 }
 
@@ -315,6 +316,16 @@ static void early_read_int(char *param, int *var)
 	*var = memparse(cp, &cp);
 }
 
+static void early_read_hex(char *param, uint32_t *var)
+{
+	char *cp = strstr(cfeBootParms, param);
+
+	if(cp == NULL)
+		return;
+	cp += strlen(param);
+	*var = simple_strtoul(cp, &cp, 16);
+}
+
 #define PINMUX(reg, field, val) do { \
 	BDEV_WR(BCHP_SUN_TOP_CTRL_PIN_MUX_CTRL_##reg, \
 		(BDEV_RD(BCHP_SUN_TOP_CTRL_PIN_MUX_CTRL_##reg) & \
@@ -352,6 +363,7 @@ static void __init board_pinmux_setup(void)
 	PINMUX(20, gpio_109, 5);
 
 	/* set RGMII lines to 2.5V */
+#ifdef CONFIG_MIPS_BCM7420A0
 	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_002, 1);
 	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_003, 1);
 	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_004, 1);
@@ -364,6 +376,9 @@ static void __init board_pinmux_setup(void)
 	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_012, 1);
 	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_013, 1);
 	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_014, 1);
+#else
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, rgmii_pad_mode, 1);
+#endif /* CONFIG_MIPS_BCM7420A0 */
 #endif /* CONFIG_MIPS_BCM7420 */
 #endif /* ! CONFIG_MIPS_BRCM_SIM */
 }
@@ -589,6 +604,10 @@ void __init prom_init(void)
 	early_read_int("flashcode=", &gFlashCode);
 	early_read_int("bcmsplash=", &gBcmSplash);
 
+	/* NAND Timings, in Hex */
+	early_read_hex("nandTiming1=", &gNandTiming1);
+	early_read_hex("nandTiming2=", &gNandTiming2);
+
 	/* brcmnand=
 	 *	rescan: 	1. Rescan for bad blocks, and update existing BBT
 	 *	showbbt:	2. Print out the contents of the BBT on boot up.
@@ -788,7 +807,7 @@ printk("g_board_RAM_size=%dMB\n", ramSizeMB);
 			add_memory_region(0, g_board_RAM_size, BOOT_MEM_RAM);
 		}
 		else {
-#if defined (CONFIG_MIPS_BCM7440B0) || defined(CONFIG_MIPS_BCM7601)
+#if defined (CONFIG_MIPS_BCM7440B0) || defined(CONFIG_MIPS_BCM7601) || defined(CONFIG_MIPS_BCM7635)
 			/*
 			** On the 7440B0, Memory Region 0
 			** is split into a DMA region sized

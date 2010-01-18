@@ -72,12 +72,20 @@ when	who 	what
 
 #define CET_SYNC_FREQ	(10*60*HZ)	
 
+
 static char cet_pattern[] = {'C', 'E', 'T', 0};
 static struct brcmnand_cet_descr cet_descr = {
 	.offs = 9,
 	.len = 4,
 	.pattern = cet_pattern
 };
+
+/* 
+ * This also applies to Large Page SLC flashes with BCH-4 ECC.
+ * We don't support BCH-4 on Small Page SLCs because there are not 
+ * enough free bytes for the OOB, but we don't enforce it,
+ * in order to allow page aggregation like in YAFFS2 on small page SLCs.
+ */
 static struct brcmnand_cet_descr cet_descr_mlc = {
 	.offs = 1,
 	.len = 4,
@@ -677,10 +685,18 @@ int brcmnand_create_cet(struct mtd_info *mtd)
 	if (unlikely(gdebug)) {
 		printk(KERN_INFO "brcmnandCET: Creating correctable error table ...\n");
 	}
-	if (NAND_IS_MLC(this)) {
+	
+	if (NAND_IS_MLC(this) || /* MLC flashes */
+	   /* SLC w/ BCH-n; We don't check for pageSize, and let it be */
+	   (this->ecclevel >= BRCMNAND_ECC_BCH_1 && this->ecclevel <= BRCMNAND_ECC_BCH_12)) 
+	{
 		this->cet = cet = &cet_descr_mlc;
-	} else {
+if (gdebug) printk("%s: CET = cet_desc_mlc\n", __FUNCTION__);
+	} 
+
+	else {
 		this->cet = cet = &cet_descr;
+if (gdebug) printk("%s: CET = cet_descr\n", __FUNCTION__);
 	}
 	cet->flags = 0x00;
 	/* Check that BBT table and mirror exist */

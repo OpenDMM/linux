@@ -199,7 +199,8 @@ void __init plat_mem_setup(void)
         || defined( CONFIG_MIPS_BCM7403 ) || defined( CONFIG_MIPS_BCM7405 ) \
 	|| defined( CONFIG_MIPS_BCM7335 ) || defined( CONFIG_MIPS_BCM7325 ) \
 	|| defined( CONFIG_MIPS_BCM3548 ) || defined( CONFIG_MIPS_BCM7420 ) \
-	|| defined( CONFIG_MIPS_BCM7336 )
+	|| defined( CONFIG_MIPS_BCM7336 ) || defined( CONFIG_MIPS_BCM7340 )
+
 	
 	set_io_port_base(0xf0000000);  /* start of PCI IO space. */
 #elif defined( CONFIG_MIPS_BCM7329 )
@@ -207,7 +208,7 @@ void __init plat_mem_setup(void)
 #elif defined ( CONFIG_BCM93730 )
 	set_io_port_base(KSEG1ADDR(0x13000000));
 
-#elif defined( CONFIG_MIPS_BCM7440 ) || defined (CONFIG_MIPS_BCM7601)
+#elif defined( CONFIG_MIPS_BCM7440 ) || defined (CONFIG_MIPS_BCM7601) || defined (CONFIG_MIPS_BCM7635)
 	set_io_port_base(PCI_IO_WIN_BASE);  /* 0xf8000000 in boardmap.h. */
 #else
        
@@ -225,8 +226,9 @@ void __init plat_mem_setup(void)
 	board_time_init = brcm_time_init;
  	panic_timeout = 180;
 
-#if defined( CONFIG_MIPS_BCM7440B0 ) || defined( CONFIG_MIPS_BCM7325B0 ) \
-	|| defined( CONFIG_MIPS_BCM7443A0 ) || defined (CONFIG_MIPS_BCM7601)
+#if	defined( CONFIG_MIPS_BCM7440B0 ) || defined( CONFIG_MIPS_BCM7325B0 ) 	\
+	|| defined( CONFIG_MIPS_BCM7443A0 ) || defined (CONFIG_MIPS_BCM7601)	\
+	|| defined( CONFIG_MIPS_BCM7635A0 ) 
 	
     // Set externalize IO sync bit (CP0 $16, sel 7, bit 8)
 	{
@@ -428,11 +430,24 @@ static struct resource umac_0_resources[] = {
 		.end =		BPHYSADDR(BRCM_UMAC_0_REG_END),
 		.flags =	IORESOURCE_MEM,
 	},
+#ifdef CONFIG_MIPS_BCM7420A0
 	[1] = {
 		.start =	BCM_LINUX_CPU_ENET_IRQ,
 		.end =		BCM_LINUX_CPU_ENET_IRQ,
 		.flags =	IORESOURCE_IRQ,
 	},
+#else
+	[1] = {
+		.start =	BCM_LINUX_GENET_0_A_IRQ,
+		.end =		BCM_LINUX_GENET_0_A_IRQ,
+		.flags =	IORESOURCE_IRQ,
+	},
+	[2] = {
+		.start =	BCM_LINUX_GENET_0_B_IRQ,
+		.end =		BCM_LINUX_GENET_0_B_IRQ,
+		.flags =	IORESOURCE_IRQ,
+	},
+#endif
 };
 
 static struct platform_device umac_0_plat_dev = {
@@ -465,11 +480,24 @@ static struct resource umac_1_resources[] = {
 		.end =		BPHYSADDR(BRCM_UMAC_1_REG_END),
 		.flags =	IORESOURCE_MEM,
 	},
+#ifdef CONFIG_MIPS_BCM7420A0
 	[1] = {
 		.start =	BCM_LINUX_CPU_ENET_1_IRQ,
 		.end =		BCM_LINUX_CPU_ENET_1_IRQ,
 		.flags =	IORESOURCE_IRQ,
 	},
+#else
+	[1] = {
+		.start =	BCM_LINUX_GENET_1_A_IRQ,
+		.end =		BCM_LINUX_GENET_1_A_IRQ,
+		.flags =	IORESOURCE_IRQ,
+	},
+	[2] = {
+		.start =	BCM_LINUX_GENET_1_B_IRQ,
+		.end =		BCM_LINUX_GENET_1_B_IRQ,
+		.flags =	IORESOURCE_IRQ,
+	},
+#endif
 };
 
 static struct platform_device umac_1_plat_dev = {
@@ -495,6 +523,8 @@ static int __init umac_moca_initcall(void)
 
 	spin_lock_irqsave(&g_magnum_spinlock, flags);
 #if defined(BRCM_UMAC_0_SUPPORTED)
+	BDEV_WR_F(SUN_TOP_CTRL_SW_RESET, enet_sw_reset, 1);
+	BDEV_RD(BCHP_SUN_TOP_CTRL_SW_RESET);
 	BDEV_WR_F(SUN_TOP_CTRL_SW_RESET, enet_sw_reset, 0);
 #endif
 #if defined(BRCM_MOCA_SUPPORTED)
