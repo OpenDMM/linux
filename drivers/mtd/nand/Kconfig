@@ -232,6 +232,10 @@ config MTD_NAND_CS553X
 
 	  If you say "m", the module will be called "cs553x_nand.ko".
 
+config MTD_NAND_DM8000
+	tristate "DM8000 NAND support"
+	depends on MTD_NAND && MIPS_BRCM97XXX
+
 config MTD_NAND_NANDSIM
 	tristate "Support for NAND Flash Simulator"
 	depends on MTD_NAND && MTD_PARTITIONS

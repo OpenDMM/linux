@@ -300,8 +300,10 @@ struct nand_buffers {
 	uint8_t 	databuf[NAND_MAX_PAGESIZE + NAND_MAX_OOBSIZE];
 	uint8_t	ecccalc[NAND_MAX_OOBSIZE];
 	uint8_t	ecccode[NAND_MAX_OOBSIZE];
-	 // obsoleted in 2.6.26uint8_t	oobwbuf[NAND_MAX_OOBSIZE];   
-	 // obsoleted in 2.6.26uint8_t	oobrbuf[NAND_MAX_OOBSIZE];
+#ifndef CONFIG_MTD_BRCMNAND
+	uint8_t	oobwbuf[NAND_MAX_OOBSIZE];
+	uint8_t	oobrbuf[NAND_MAX_OOBSIZE];
+#endif
 };
 
 /**
