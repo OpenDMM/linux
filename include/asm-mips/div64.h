@@ -53,6 +53,23 @@
 	(res) = __quot; \
 	__mod; })
 
+/*
+ * __do_divu -- unsigned interger dividing
+ *
+ * handle removal of 'h' constraint in GCC 4.4
+ */
+#ifndef GCC_NO_H_CONSTRAINT /* gcc <= 4.3*/
+#define __do_divu() ({ \
+ __asm__("divu $0, %z2, %z3" \
+ : "=h" (__upper), "=l" (__high) \
+ : "Jr" (__high), "Jr" (__base) \
+ : GCC_REG_ACCUM); })
+#else /* gcc >= 4.4 */
+#define __do_divu() ({ \
+ __upper = (uintx_t)__high % __base; \
+ __high = (uintx_t)__high / __base; })
+#endif
+
 #define do_div(n, base) ({ \
 	unsigned long long __quot; \
 	unsigned long __mod; \
@@ -67,10 +84,7 @@
 	__upper = __high; \
 	\
 	if (__high) \
-		__asm__("divu	$0, %z2, %z3" \
-			: "=h" (__upper), "=l" (__high) \
-			: "Jr" (__high), "Jr" (__base) \
-			: GCC_REG_ACCUM); \
+		__do_divu(); \
 	\
 	__mod = do_div64_32(__low, __upper, __low, __base); \
 	\

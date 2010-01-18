@@ -276,10 +276,14 @@ static unsigned long fixed_rate_gettimeoffset(void)
 	/* .. relative to previous jiffy (32 bits is enough) */
 	count -= timerlo;
 
+#ifndef GCC_NO_H_CONSTRAINT
 	__asm__("multu	%1,%2"
 		: "=h" (res)
 		: "r" (count), "r" (sll32_usecs_per_cycle)
 		: "lo", GCC_REG_ACCUM);
+#else
+	res = ((uintx_t)count * sll32_usecs_per_cycle) >> BITS_PER_LONG;
+#endif
 
 	/*
 	 * Due to possible jiffies inconsistencies, we need to check
@@ -331,10 +335,14 @@ static unsigned long calibrate_div32_gettimeoffset(void)
 	/* .. relative to previous jiffy (32 bits is enough) */
 	count -= timerlo;
 
+#ifndef GCC_NO_H_CONSTRAINT
 	__asm__("multu  %1,%2"
 		: "=h" (res)
 		: "r" (count), "r" (quotient)
 		: "lo", GCC_REG_ACCUM);
+#else
+	res = ((uintx_t)count * quotient) >> BITS_PER_LONG;
+#endif
 
 	/*
 	 * Due to possible jiffies inconsistencies, we need to check
@@ -387,10 +395,14 @@ static unsigned long calibrate_div64_gettimeoffset(void)
 	/* .. relative to previous jiffy (32 bits is enough) */
 	count -= timerlo;
 
+#ifndef GCC_NO_H_CONSTRAINT
 	__asm__("multu	%1,%2"
 		: "=h" (res)
 		: "r" (count), "r" (quotient)
 		: "lo", GCC_REG_ACCUM);
+#else
+	res = ((uintx_t)count * quotient) >> BITS_PER_LONG;
+#endif
 
 	/*
 	 * Due to possible jiffies inconsistencies, we need to check
@@ -434,7 +446,7 @@ EXPORT_SYMBOL(null_perf_irq);
 EXPORT_SYMBOL(perf_irq);
 
 extern int performance_enabled;
-extern int test_all_counters();
+extern int test_all_counters(void);
 
 /*
  * High-level timer interrupt service routines.  This function

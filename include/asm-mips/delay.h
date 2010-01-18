@@ -36,6 +36,37 @@ static inline void __delay(unsigned long loops)
 		: "0" (loops));
 }
 
+/*
+ * convert usecs to loops
+ *
+ * handle removal of 'h' constraint in GCC 4.4
+ */
+
+#ifndef GCC_NO_H_CONSTRAINT    /* gcc <= 4.3 */
+static inline unsigned long __usecs_to_loops(unsigned long usecs, unsigned long lpj)
+{
+	unsigned long lo;
+
+	if (sizeof(long) == 4)
+		__asm__("multu\t%2, %3"
+		: "=h" (usecs), "=l" (lo)
+		: "r" (usecs), "r" (lpj)
+		: GCC_REG_ACCUM);
+	else if (sizeof(long) == 8)
+		__asm__("dmultu\t%2, %3"
+		: "=h" (usecs), "=l" (lo)
+		: "r" (usecs), "r" (lpj)
+		: GCC_REG_ACCUM);
+
+	return usecs;
+}
+#else  /* GCC_NO_H_CONSTRAINT, gcc >= 4.4 */
+static inline unsigned long __usecs_to_loops(unsigned long usecs,
+               unsigned long lpj)
+{
+	return ((uintx_t)usecs * lpj) >> BITS_PER_LONG;
+}
+#endif
 
 /*
  * Division by multiplication: you don't have to worry about
@@ -50,8 +81,6 @@ static inline void __delay(unsigned long loops)
 
 static inline void __udelay(unsigned long usecs, unsigned long lpj)
 {
-	unsigned long lo;
-
 	/*
 	 * The rates of 128 is rounded wrongly by the catchall case
 	 * for 64-bit.  Excessive precission?  Probably ...
@@ -64,19 +93,7 @@ static inline void __udelay(unsigned long usecs, unsigned long lpj)
 	usecs *= (unsigned long) (((0x8000000000000000ULL / (500000 / HZ)) +
 	                           0x80000000ULL) >> 32);
 #endif
-
-	if (sizeof(long) == 4)
-		__asm__("multu\t%2, %3"
-		: "=h" (usecs), "=l" (lo)
-		: "r" (usecs), "r" (lpj)
-		: GCC_REG_ACCUM);
-	else if (sizeof(long) == 8)
-		__asm__("dmultu\t%2, %3"
-		: "=h" (usecs), "=l" (lo)
-		: "r" (usecs), "r" (lpj)
-		: GCC_REG_ACCUM);
-
-	__delay(usecs);
+	__delay(__usecs_to_loops(usecs, lpj));
 }
 
 #define __udelay_val cpu_data[raw_smp_processor_id()].udelay_val
