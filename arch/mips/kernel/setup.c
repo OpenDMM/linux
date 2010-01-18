@@ -454,14 +454,29 @@ void brcm_print_memory_map(void)
 }
 EXPORT_SYMBOL(brcm_print_memory_map);
 
+extern int *_prom_envp;
+#define prom_envp(index) ((char *)(long)_prom_envp[(index)])
+
+static char *prom_getenv(char *envname)
+{
+	int i = strlen(envname), index = 0;
+	while (prom_envp(index)) {
+		if ((strncmp(envname, prom_envp(index), i) == 0) && (prom_envp(index)[i] == '='))
+			return prom_envp(index) + i + 1;
+		index++;
+	}
+	return NULL;
+}
+
 /*
  * By default, set the kernel to use 32MB if the user does not specify mem=nnM on the command line
  */
 static __init void __brcm_default_boot_mem(void)
 {
 	int ramSizeMB = get_RAM_size() >> 20;
-	int size, total_size;
+	int size;
 	char msg[80];
+	const char *memsize_str = prom_getenv("memsize");
 	
 	if (ramSizeMB <= 32) {
 #ifdef CONFIG_BLK_DEV_INITRD
@@ -480,12 +495,16 @@ static __init void __brcm_default_boot_mem(void)
 		size = linux_min_mem = LINUX_MIN_MEM;
 	}
 
-	total_size = size;
-	sprintf(msg, "Using %dMB for memory, overwrite by passing mem=xx\n", total_size);
-
-	uart_puts(msg);
-	brcm_insert_ram_node(0, size<<20, BOOT_MEM_RAM, &brcm_bm);
-
+	if (memsize_str) {
+		size = simple_strtol(memsize_str, NULL, 0);
+		sprintf(msg, "---> memsize from bootloader: %d\n", size);
+		uart_puts(msg);
+		brcm_insert_ram_node(0, size<<20, BOOT_MEM_RAM, &brcm_bm);
+	} else {
+		sprintf(msg, "Using %dMB for memory, overwrite by passing mem=xx\n", size);
+		uart_puts(msg);
+		brcm_insert_ram_node(0, size<<20, BOOT_MEM_RAM, &brcm_bm);
+	}
 }
 
 void (*brcm_default_boot_mem)(void) = &__brcm_default_boot_mem;

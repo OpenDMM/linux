@@ -386,6 +386,26 @@ static void __init board_pinmux_setup(void)
 
 cfePartitions_t gCfePartitions; 
 
+int prom_argc;
+int *_prom_argv, *_prom_envp;
+
+void __init prom_init_cmdline(void)
+{
+	int actr = 1; /* always ignore argv[0] */
+	char *cp = &(arcs_cmdline[0]);
+	while(actr < prom_argc) {
+		strcpy(cp, (char*)(_prom_argv[actr]));
+		cp += strlen((char*)(_prom_argv[actr]));
+		*cp++ = ' ';
+		actr++;
+	}
+	if (cp != &(arcs_cmdline[0])) {
+		/* get rid of trailing space */
+		--cp;
+		*cp = '\0';
+	}
+}
+
 void __init prom_init(void)
 {
 
@@ -732,7 +752,6 @@ void __init prom_init(void)
 		}
 
 #elif defined(CONFIG_CMDLINE)
-		char* p;
 		int appendConsoleNeeded = 1;
 
 #ifdef CONFIG_MIPS_BRCM97XXX
@@ -760,23 +779,12 @@ void __init prom_init(void)
 		uart_puts("Default command line = \n");
 		uart_puts(CONFIG_CMDLINE);
 		uart_puts("\n");
-		p = &arcs_cmdline[0];
-		while (p != NULL && *p != '\0') {
-			if (!isspace(*p))
-				break;
-			p++;
-		}
-		if (p == NULL || *p == '\0') {
-			uart_puts("Defaulting to boot from HD\n");
-			/* Default is to boot from HD */
-			strcpy(arcs_cmdline,
-				"root=/dev/sda1" DEFAULT_KARGS);
-		}
-		else if (appendConsoleNeeded) {
-			/* Make sure that the boot params specify a console */
-			appendConsoleArg(arcs_cmdline);
-		}
 		
+		prom_argc = fw_arg0;
+		_prom_argv = (int *) fw_arg1;
+		_prom_envp = (int *) fw_arg2;
+		printk("%d %p %p\n", prom_argc, _prom_argv, _prom_envp);
+		prom_init_cmdline();
 #else /* No CONFIG_CMDLINE, and not Initrd */
 	/* Default is to boot from HD */
 		strcpy(arcs_cmdline,
