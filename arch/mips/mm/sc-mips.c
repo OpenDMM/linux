@@ -24,13 +24,13 @@
  */
 static void mips_sc_wback_inv(unsigned long addr, unsigned long size)
 {
-#if defined(CONFIG_MIPS_BCM7325)
+#if defined(CONFIG_BRCM_SCM_L2)
 	/* flush previous and next cache lines as well, due to prefetching */
 	if(addr >= (KSEG0 + 128)) {
 		addr -= 128;
 		size += 128;
 	}
-	if((addr + size) < (KSEG0 + get_RAM_size() - 128)) {
+	if((addr + size) < (KSEG0 + 0x10000000 - 128)) {
 		size += 128;
 	}
 	BUG_ON((addr < 0x80000000) || ((addr + size) > 0x90000000));
@@ -84,7 +84,11 @@ static inline int __init mips_sc_probe(void)
 	if (!(config1 & MIPS_CONF_M))
 		return 0;
 
+	/* Check L2 bypass bit */
 	config2 = read_c0_config2();
+	if(config2 & (1 << 12))
+		return 0;
+
 	tmp = (config2 >> 4) & 0x0f;
 	if (0 < tmp && tmp <= 7)
 		c->scache.linesz = 2 << tmp;

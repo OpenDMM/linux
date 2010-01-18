@@ -107,5 +107,3 @@ getstart:
 		.set reorder
 
 END(GetMIPSFreq)
-
-

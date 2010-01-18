@@ -28,8 +28,10 @@
 #include <linux/ctype.h>
 #include <linux/init.h>
 #include <linux/mm.h>
+#include <linux/spinlock.h>
 #include <linux/module.h> // SYM EXPORT */
 #include <asm/bootinfo.h>
+#include <asm/r4kcache.h>
 //#include <asm/mmzone.h>
 #include <asm/brcmstb/common/brcmstb.h>
 
@@ -38,13 +40,38 @@
 unsigned int par_val = 0x00;	/* for RAC Mode setting, 0x00-Disabled, 0xD4-I&D Enabled, 0x94-I Only */
 unsigned int par_val2 = 0x00;	/* for RAC Cacheable Space setting */
 
+/* to protect accesses to shared registers, e.g. CLKGEN, PIN_MUX */
+DEFINE_SPINLOCK(g_magnum_spinlock);
+EXPORT_SYMBOL(g_magnum_spinlock);
+
 /* Enable SATA2 3Gbps, only works on 65nm chips (7400d0, 7405, 7335) no-op otherwise */
 int gSata2_3Gbps = 0;
 EXPORT_SYMBOL(gSata2_3Gbps);
 
-/* 97118 normal or RNG */
-int bcm7118_boardtype = 0;
-EXPORT_SYMBOL(bcm7118_boardtype);
+/* SATA/ENET can be disabled through bond options */
+int brcm_sata_enabled = 0;
+EXPORT_SYMBOL(brcm_sata_enabled);
+
+int brcm_enet_enabled = 0;
+int brcm_enet_no_mdio = 0;
+int brcm_emac_1_enabled = 0;
+EXPORT_SYMBOL(brcm_enet_enabled);
+EXPORT_SYMBOL(brcm_enet_no_mdio);
+EXPORT_SYMBOL(brcm_emac_1_enabled);
+
+int brcm_pci_enabled = 0;
+EXPORT_SYMBOL(brcm_pci_enabled);
+
+int brcm_smp_enabled = 0;
+EXPORT_SYMBOL(brcm_smp_enabled);
+
+/* DOCSIS platform (e.g. 97455) */
+int brcm_docsis_platform = 0;
+EXPORT_SYMBOL(brcm_docsis_platform);
+
+/* EBI bug workaround */
+int brcm_ebi_war = 0;
+EXPORT_SYMBOL(brcm_ebi_war);
 
 /* Customized flash size in MB */
 unsigned int gFlashSize = 0;	/* Default size on 97438 is 64 */
@@ -53,6 +80,12 @@ unsigned int gFlashCode = 0; 	/* Special reset codes, 1 for writing 0xF0 to offs
 /* Clear NAND BBT */
 int gClearBBT = 0;
 EXPORT_SYMBOL(gClearBBT);
+
+#ifdef CONFIG_MTD_BRCMNAND_CORRECTABLE_ERR_HANDLING
+/* Argument for NAND CET */
+char gClearCET = 0;
+EXPORT_SYMBOL(gClearCET);
+#endif /* CONFIG_MTD_BRCMNAND_CORRECTABLE_ERR_HANDLING */
 
 /* Enable Splash partition on flash */
 #ifdef CONFIG_MTD_SPLASH_PARTITION
@@ -75,19 +108,6 @@ EXPORT_SYMBOL(gNumNand);
 /* SATA interpolation */
 int gSataInterpolation = 0;
 EXPORT_SYMBOL(gSataInterpolation);
-
-/* 7401Cx revision to decide whether C0 workaround is needed or not */
-int bcm7401Cx_rev = 0xFF;
-EXPORT_SYMBOL(bcm7401Cx_rev);
-
-/* 7118Ax revision to decide whether A0 workaround is needed or not */
-int bcm7118Ax_rev = 0xFF;
-EXPORT_SYMBOL(bcm7118Ax_rev);
-
-
-/* 7403Ax revision to decide whether A0 workaround is needed or not */
-int bcm7403Ax_rev = 0xFF;
-EXPORT_SYMBOL(bcm7403Ax_rev);
 
 #define MAX_HWADDR	16
 #define HW_ADDR_LEN	6
@@ -143,10 +163,71 @@ extern void breakpoint(void);
 //cmdEntry_t rootEntry;
 
 char cfeBootParms[CFE_CMDLINE_BUFLEN]; 
+
+unsigned long brcm_dram0_size = 0;
+unsigned long brcm_dram1_size = 0;
 #endif
 //char arcs_cmdline[COMMAND_LINE_SIZE];
 
+#ifndef BRCM_MEMORY_STRAPS
 
+#define MAGIC0		0xdeadbeef
+#define MAGIC1		0xfeedcafe
+
+static unsigned long
+probe_memsize(void)
+{
+#if !defined(CONFIG_MIPS_BRCM_SIM)
+	volatile uint32_t *addr = (volatile void *)KSEG1, *taddr;
+	uint32_t olddata;
+	long flags;
+	unsigned int i, memsize = 256;
+
+	printk("Probing system memory size... ");
+
+	local_irq_save(flags);
+	cache_op(Index_Writeback_Inv_D, KSEG0);
+	olddata = *addr;
+
+	/*
+	 * Try to figure out where memory wraps around.  If it does not
+	 * wrap, assume 256MB
+ 	*/
+	for(i = 4; i <= 128; i <<= 1) {
+		taddr = (volatile void *)(KSEG1 + (i * 1048576));
+		*addr = MAGIC0;
+		if(*taddr == MAGIC0) {
+			*addr = MAGIC1;
+			if(*taddr == MAGIC1) {
+				memsize = i;
+				break;
+			}
+		}
+	}
+
+	*addr = olddata;
+	cache_op(Index_Writeback_Inv_D, KSEG0);
+	local_irq_restore(flags);
+
+	printk("found %u MB\n", memsize);
+
+	return(memsize * 1048576);
+#else
+	/* Use fixed memory size (32MB) for simulation runs */
+	return(32 * 1048576);
+#endif
+}
+
+unsigned long
+get_RAM_size(void)
+{
+	BUG_ON(! brcm_dram0_size);
+	return(brcm_dram0_size);
+}
+
+EXPORT_SYMBOL(get_RAM_size);
+
+#endif /* BRCM_MEMORY_STRAPS */
 
 /*
   * Munges cmdArg, and append the console= string if its not there
@@ -216,13 +297,22 @@ isRootSpecified(char* cmdArg)
 	return 0;
 }
 
+static void early_read_int(char *param, int *var)
+{
+	char *cp = strstr(cfeBootParms, param);
+
+	if(cp == NULL)
+		return;
+	cp += strlen(param);
+	*var = memparse(cp, &cp);
+}
+
 void __init prom_init(void)
 {
 
 #ifdef CONFIG_MIPS_BRCM97XXX
 	int hasCfeParms = 0;
 	int res = -1;
-	char msg[COMMAND_LINE_SIZE];
 	extern void determineBootFromFlashOrRom(void);
 #endif
 
@@ -235,39 +325,67 @@ void __init prom_init(void)
 	mips_machgroup = MACH_GROUP_BRCM;
 	mips_machtype  = MACH_BRCM_STB;
 
+#ifdef BRCM_SATA_SUPPORTED
+	brcm_sata_enabled = 1;
+#endif
+
+#ifdef BRCM_ENET_SUPPORTED
+	brcm_enet_enabled = 1;
+#endif
+
+#ifdef BRCM_EMAC_1_SUPPORTED
+	brcm_emac_1_enabled = 1;
+#endif
+
+#ifdef BRCM_PCI_SUPPORTED
+	brcm_pci_enabled = 1;
+#endif
+
+#ifdef CONFIG_SMP
+	brcm_smp_enabled = 1;
+#endif
+
 #ifdef CONFIG_MIPS_BCM7118
 	/* detect 7118RNG board */
 	if( BDEV_RD(BCHP_CLKGEN_REG_START) == 0x1c )
-		bcm7118_boardtype = 1;
+		brcm_sata_enabled = 0;
+	/* onchip DOCSIS owns the ENET */
+	brcm_enet_enabled = 0;
 #endif
 
-#if defined( CONFIG_MIPS_BCM7118 ) || defined( CONFIG_MIPS_BCM7401C0 )	\
- || defined( CONFIG_MIPS_BCM7402C0 ) || defined( CONFIG_MIPS_BCM3563 ) \
- || defined (CONFIG_MIPS_BCM3563C0)
-// jipeng - need set bus to async mode before enabling the following	
-	if(!(read_c0_diag4() & 0x400000))
-	{
-		int	val=read_c0_diag4();
-		write_c0_diag4(val | 0x400000);
-		sprintf(msg, "CP0 reg 22 sel 0 to 5: 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n", read_c0_diag(), read_c0_diag1(), read_c0_diag2(), read_c0_diag3(), read_c0_diag4(), read_c0_diag5());
-		uart_puts(msg);
+#ifdef CONFIG_MIPS_BCM7405
+	/* detect 7406 */
+	if(BDEV_RD(BCHP_SUN_TOP_CTRL_OTP_OPTION_STATUS) &
+		BCHP_SUN_TOP_CTRL_OTP_OPTION_STATUS_otp_option_sata_disable_MASK)
+		brcm_sata_enabled = 0;
+	switch(BDEV_RD(BCHP_SUN_TOP_CTRL_OTP_OPTION_STATUS) & 0xf) {
+		case 0x0:
+			/* 7405/7406 */
+			break;
+		case 0x1:
+			/* 7466 */
+			brcm_pci_enabled = 0;
+			brcm_emac_1_enabled = 0;
+			break;
+		case 0x3:
+			/* 7106 */
+			brcm_emac_1_enabled = 0;
+			brcm_smp_enabled = 0;
+			break;
+		case 0x4:
+			/* 7205 */
+			brcm_emac_1_enabled = 0;
+			break;
 	}
-
+#endif
+	
+#if defined(CONFIG_BMIPS3300)
+	// Set BIU to async mode
+	set_c0_brcm_bus_pll(1 << 22);
 	// Enable write gathering (BCHP_MISB_BRIDGE_WG_MODE_N_TIMEOUT)
 	BDEV_WR(0x0000040c, 0x264);
 	// Enable Split Mode (BCHP_MISB_BRIDGE_MISB_SPLIT_MODE)
 	BDEV_WR(0x00000410, 0x1);
-#elif defined( CONFIG_MIPS_BCM7440A0 )
-	if(!(read_c0_diag4() & 0x400000))
-	{
-		int	val=read_c0_diag4();
-		write_c0_diag4(val | 0x400000);
-		sprintf(msg, "CP0 reg 22 sel 0 to 5: 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n", read_c0_diag(), read_c0_diag1(), read_c0_diag2(), read_c0_diag3(), read_c0_diag4(), read_c0_diag5());
-		uart_puts(msg);
-	}
-	
-	// Enable write gathering (BCHP_MISB_BRIDGE_WG_MODE_N_TIMEOUT)
-	BDEV_WR(0x0000040c, 0x2803);
 #endif
 
 	/* Kernel arguments */
@@ -282,7 +400,23 @@ void __init prom_init(void)
 		}
   	}
   
-	res = get_cfe_boot_parms(cfeBootParms, &gNumHwAddrs, gHwAddrs);
+	res = get_cfe_boot_parms();
+	hasCfeParms = (res == 0);
+
+#ifdef BRCM_MEMORY_STRAPS
+	get_RAM_size();
+#else
+	if(brcm_dram0_size == 0)
+		brcm_dram0_size = probe_memsize();
+#ifndef CONFIG_DISCONTIGMEM
+	if(brcm_dram0_size > (256 << 20)) {
+		printk("Extra RAM beyond 256MB ignored.  Please "
+			"use a kernel that supports DISCONTIG.\n");
+		brcm_dram0_size = 256 << 20;
+	}
+#endif /* CONFIG_DISCONTIGMEM */
+#endif /* BRCM_MEMORY_STRAPS */
+
 	if(gNumHwAddrs <= 0) {
 #if !defined(CONFIG_BRCM_PCI_SLAVE)
 		unsigned int i, mac = FLASH_MACADDR_ADDR, ok = 0;
@@ -315,8 +449,6 @@ void __init prom_init(void)
 #endif
 		gNumHwAddrs = 1;
 	}
-  //printk("get_cfe_boot_parms returns %d, strlen(cfeBootParms)=%d\n", res, strlen(cfeBootParms));
-	hasCfeParms = ((res == 0 ) || (res == -2));
 	// Make sure cfeBootParms is not empty or contains all white space
 	if (hasCfeParms) {
 		int i;
@@ -351,128 +483,35 @@ void __init prom_init(void)
 	  char	str1[32], str2[32] = "0x";
 	  char *cp, *sp;
 
-	  sprintf(msg, "cfeBootParms ===> %s\n", cfeBootParms);
-	  uart_puts(msg);
 	  cp = strstr( cfeBootParms, "bcmrac=" );
 	  if( cp ) { 
 		if ( strchr(cfeBootParms, ',') ) {
 			for( cp+=strlen("bcmrac="),sp=str1; *cp != ','; *sp++=*cp++ );
 			*sp = '\0';
 			strcat( str2, ++cp );
-			sprintf(msg, "STR1 : %s    STR2 : %s\n", str1, str2);
-		        uart_puts(msg);
 			sscanf( str1, "%u", &par_val );
 			sscanf( str2, "%x", &par_val2 );
 			if (par_val2 == 0x00) par_val2 = (get_RAM_size()-1) & 0xffff0000;
 		} else {
-			sprintf(msg, "RAC Cacheable Space is set to default...\n");
-		        uart_puts(msg);
 			sscanf( cp+=strlen("bcmrac="), "%i", &par_val );
 			par_val2 = (get_RAM_size()-1) & 0xffff0000;
 		}
 	  }
 	  else {
-#if defined(CONFIG_MIPS_BCM7400D0) || defined(CONFIG_MIPS_BCM7405) \
-    || defined(CONFIG_MIPS_BCM7335) || defined(CONFIG_MIPS_BCM3548)
+#if defined(CONFIG_BMIPS4380) || defined(CONFIG_BMIPS5000)
 		par_val = 0xff;		/* default: keep CFE setting */
-#elif	!defined(CONFIG_MIPS_BCM7325A0)	/* no RAC in 7325A0 */
+#elif !defined(CONFIG_MIPS_BCM7325A0)	/* no RAC in 7325A0 */
 		par_val = 0x03;		/* set default to I/D RAC on */
 #endif
 		par_val2 = (get_RAM_size()-1) & 0xffff0000;
 	  }
 	}
 
-
-	/* bcmsata2=1 */
-	{
-		char c = ' ', *from = cfeBootParms;
-		int len = 0;
-
-		for (;;) {
-			if (c == ' ' && !memcmp(from, "bcmsata2=", 9)) {
-				gSata2_3Gbps= memparse(from + 9, &from);
-				break;
-			}
-			c = *(from++);
-			if (!c)
-				break;
-			if (CL_SIZE <= ++len)
-				break;
-		}
-	}
-
-	/* bcmssc=1, turn on Interpolation for SSC drives, default 0 */
-	{
-		char c = ' ', *from = cfeBootParms;
-		int len = 0;
-
-		for (;;) {
-			if (c == ' ' && !memcmp(from, "bcmssc=", 7)) {
-				gSataInterpolation= memparse(from + 7, &from);
-				break;
-			}
-			c = *(from++);
-			if (!c)
-				break;
-			if (CL_SIZE <= ++len)
-				break;
-		}
-	}
-
-
-	/* flashsize=nnM */
-	{
-		char c = ' ', *from = cfeBootParms;
-		int len = 0;
-
-		for (;;) {
-			if (c == ' ' && !memcmp(from, "flashsize=", 10)) {
-				gFlashSize = memparse(from + 10, &from) >> 20;
-				break;
-			}
-			c = *(from++);
-			if (!c)
-				break;
-			if (CL_SIZE <= ++len)
-				break;
-		}
-	}
-
-	/* flashcode=1 : Write 0xF0 to reset Spansion flash */
-	{
-		char c = ' ', *from = cfeBootParms;
-		int len = 0;
-
-		for (;;) {
-			if (c == ' ' && !memcmp(from, "flashcode=", 10)) {
-				gFlashCode = memparse(from + 10, &from);
-				break;
-			}
-			c = *(from++);
-			if (!c)
-				break;
-			if (CL_SIZE <= ++len)
-				break;
-		}
-	}
-
-	/* bcmsplash=1 */
-	{
-		char c = ' ', *from = cfeBootParms;
-		int len = 0;
-
-		for (;;) {
-			if (c == ' ' && !memcmp(from, "bcmsplash=", 10)) {
-				gBcmSplash= memparse(from + 10, &from);
-				break;
-			}
-			c = *(from++);
-			if (!c)
-				break;
-			if (CL_SIZE <= ++len)
-				break;
-		}
-	}
+	early_read_int("bcmsata2=", &gSata2_3Gbps);
+	early_read_int("bcmssc=", &gSataInterpolation);
+	early_read_int("flashsize=", &gFlashSize);
+	early_read_int("flashcode=", &gFlashCode);
+	early_read_int("bcmsplash=", &gBcmSplash);
 
 	/* brcmnand=
 	 *	rescan: 	1. Rescan for bad blocks, and update existing BBT
@@ -484,6 +523,8 @@ void __init prom_init(void)
 	 * 	erase:	7. Erase entire flash, except CFE, and rescan for bad blocks 
 	 *	eraseall:	8. Erase entire flash, and rescan for bad blocks
 	 *	clearbbt:	9. Erase BBT and rescan for bad blocks.  (DANGEROUS, may lose Mfg's BIs).
+	 *      showcet:       10. Display the correctable error count
+	 *      resetcet:      11. Reset the correctable error count to 0 and table to all 0xff
 	 */
 
 	{
@@ -511,6 +552,17 @@ void __init prom_init(void)
 				else if (!memcmp(from + 9, "clearbbt", 8)) {
 					gClearBBT = 9; // Force erase of BBT, DANGEROUS.
 				}
+#ifdef CONFIG_MTD_BRCMNAND_CORRECTABLE_ERR_HANDLING
+				else if (!memcmp(from + 9, "showcet", 7)) {
+					gClearCET = 1;
+				}
+				else if (!memcmp(from + 9, "resetcet", 8)) {
+					gClearCET = 2;
+				} 
+				else if (!memcmp(from + 9, "disablecet", 10)) {
+					gClearCET = 3;
+				}
+#endif /* CONFIG_MTD_BRCMNAND_CORRECTABLE_ERR_HANDLING */
 #endif
 				break;
 			}
@@ -550,17 +602,13 @@ void __init prom_init(void)
                        gNandCS = &gNandCS_priv[1];     // Real array starts at element #1
 	}
 
-               printk("Number of Nand Chips = %d\n", gNumNand);
+               //printk("Number of Nand Chips = %d\n", gNumNand);
        }
 
 
 
 	/* Just accept whatever specified in BOOT_FLAGS as kernel options, unless root= is NOT specified */
 	if (hasCfeParms && isRootSpecified(cfeBootParms)) {
-//sprintf(msg, "after get_cfe_boot_parms, res=0, BootParmAddr=%08x,bootParms=%s\n",
-//&cfeBootParms[0],cfeBootParms);
-//uart_puts(msg);
-
 		strcpy(arcs_cmdline, cfeBootParms);
 		appendConsoleArg(arcs_cmdline);
 	}
@@ -644,9 +692,9 @@ void __init prom_init(void)
 
 	} /* End else no root= option is specified */
 
-	uart_puts("Kernel boot options: ");
-	uart_puts(arcs_cmdline);
-	uart_puts("\r\n");
+	//uart_puts("Kernel boot options: ");
+	//uart_puts(arcs_cmdline);
+	//uart_puts("\r\n");
 
 	// THT: PR21410 Implement memory hole in init_bootmem, now just record the memory size.
 	{
@@ -719,111 +767,32 @@ void __init prom_init(void)
 #if defined (CONFIG_MIPS_BRCM97XXX) 
 	(void) determineBootFromFlashOrRom();
 #endif /* if BCM97xxx boards */
-//	uart_puts("<--prom_init\r\n");
 
-// jipeng - if it is not in sync mode, set it here
-	switch (current_cpu_data.cputype) {
-               	case CPU_BMIPS3300:
-                    // RYH - BHTD patch 11/15/06
-                    {
-                        int cp022;
+#if defined(CONFIG_BMIPS3300)
+	// clear BHTD to enable branch history table
+	clear_c0_brcm_reset(1 << 16);
 
-                        cp022 = __read_32bit_c0_register($22, 5);
-                        sprintf(msg, "Initial CP0 22 value : 0x%08x\n", cp022);   
-                        uart_puts(msg);
+	// put the BIU back in sync mode
+	clear_c0_brcm_bus_pll(1 << 22);
+#elif defined(CONFIG_BMIPS4380)
+	// clear BHTD to enable branch history table
+	clear_c0_brcm_config_0(1 << 21);
+#endif
 
-                        if ( cp022 & 0x00010000 ) {     // RYH - cp0 reg 22, sel 5, bit[16]
-                                cp022 &= 0xfffeffff;
-                                __write_32bit_c0_register($22, 5, cp022);
+	/* detect chips with EBI bug */
+#if defined(CONFIG_MIPS_BCM7401) || defined(CONFIG_MIPS_BCM7403)
+	if((BDEV_RD(BCHP_SUN_TOP_CTRL_PROD_REVISION) & 0xffff) == 0x20)
+		brcm_ebi_war = 1;
+#elif defined(CONFIG_MIPS_BCM7118)
+	if((BDEV_RD(BCHP_SUN_TOP_CTRL_PROD_REVISION) & 0xffff) == 0x00)
+		brcm_ebi_war = 1;
+#endif
 
-                                cp022 = __read_32bit_c0_register($22, 5);
-                                sprintf(msg, "Updated CP0 22 value : 0x%08x\n", cp022);
-                                uart_puts(msg);
-                        }
-                    }
-                    if(read_c0_diag4() & 0x400000)
-                    {
-                        int     val=read_c0_diag4();
-                        write_c0_diag4(val & ~0x400000);
-                        sprintf(msg, "CP0 reg 22 sel 0 to 5: 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n",
-                                        read_c0_diag(),
-                                        read_c0_diag1(),
-                                        read_c0_diag2(),
-                                        read_c0_diag3(),
-                                        read_c0_diag4(),
-                                        read_c0_diag5());
-                        uart_puts(msg);
-                    }
-
-                    break;
-
-
-	       	case CPU_BMIPS4350:
-	       	case CPU_BMIPS4380:
-
-                    // RYH - BHTD patch 01/08/07
-                    {
-                        int cp022;
-
-                        cp022 = __read_32bit_c0_register($22, 0);
-                        sprintf(msg, "Initial CP0 22 value : 0x%08x\n", cp022);   
-                        uart_puts(msg);
-
-                        if ( cp022 & 0x00200000 ) {     // RYH - cp0 reg22, sel 0, bit[21]
-                                cp022 &= 0xffdfffff;
-                                __write_32bit_c0_register($22, 0, cp022);
-
-                                cp022 = __read_32bit_c0_register($22, 0);
-                                sprintf(msg, "Updated CP0 22 value : 0x%08x\n", cp022);
-                                uart_puts(msg);
-                        }
-                    }
-
-
-		    if(read_c0_diag4() & 0x400000)
-		    {
-			int	val=read_c0_diag4();
-			write_c0_diag4(val & ~0x400000);
-			sprintf(msg, "CP0 reg 22 sel 0 to 5: 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x 0x%08x\n",
-					read_c0_diag(), 
-					read_c0_diag1(), 
-					read_c0_diag2(), 
-					read_c0_diag3(), 
-					read_c0_diag4(), 
-					read_c0_diag5());
-			uart_puts(msg);
-		    }
-               	    break;
-
-		default:
-		    break;
-	}	
-
-	if(bcm7401Cx_rev == 0xFF)
-	{
-		volatile unsigned long* pSundryRev = (volatile unsigned long*) 0xb0404000;
-        	unsigned long chipId = (*pSundryRev) >> 16;		
-		
-		if(chipId == 0x7401)
-		{
-			bcm7401Cx_rev = (*pSundryRev) & 0xFF;
-			sprintf(msg, "Sundry 0x%08x, chipId 0x%08lx, bcm7401Cx 0x%02x\n",  (int)pSundryRev, chipId, bcm7401Cx_rev);
-			uart_puts(msg);
-		}
-		else if(chipId == 0x7118)
-		{
-			bcm7118Ax_rev = (*pSundryRev) & 0xFF;
-			sprintf(msg, "Sundry 0x%08x, chipId 0x%08lx, bcm7118Ax 0x%02x\n",  (int)pSundryRev, chipId, bcm7118Ax_rev);
-			uart_puts(msg);
-		}
-		else if(chipId == 0x7403)
-		{
-			bcm7403Ax_rev = (*pSundryRev) & 0xFF;
-			sprintf(msg, "Sundry 0x%08x, chipId 0x%08lx, bcm7403Ax %02x\n",  (int)pSundryRev, chipId, bcm7403Ax_rev);
-			uart_puts(msg);
-		}
-
-	}
+	printk("Options: sata=%d enet=%d emac_1=%d no_mdio=%d docsis=%d "
+		"ebi_war=%d pci=%d smp=%d\n",
+		brcm_sata_enabled, brcm_enet_enabled, brcm_emac_1_enabled,
+		brcm_enet_no_mdio, brcm_docsis_platform, brcm_ebi_war,
+		brcm_pci_enabled, brcm_smp_enabled);
 }
 
 const char *get_system_type(void)

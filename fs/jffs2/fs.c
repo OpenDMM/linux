@@ -23,6 +23,7 @@
 #include <linux/vfs.h>
 #include <linux/crc32.h>
 #include "nodelist.h"
+#include <linux/mtd/mtd64.h>
 
 static int jffs2_flash_setup(struct jffs2_sb_info *c);
 
@@ -465,6 +466,7 @@ int jffs2_do_fill_super(struct super_block *sb, void *data, int silent)
 	struct inode *root_i;
 	int ret;
 	size_t blocks;
+	uint64_t tmpdiv;
 
 	c = JFFS2_SB_INFO(sb);
 
@@ -479,9 +481,11 @@ int jffs2_do_fill_super(struct super_block *sb, void *data, int silent)
 	}
 #endif
 
-	c->flash_size = c->mtd->size;
+	c->flash_size = device_size(c->mtd);
+	tmpdiv = device_size(c->mtd);
 	c->sector_size = c->mtd->erasesize;
-	blocks = c->flash_size / c->sector_size;
+	do_div(tmpdiv, c->sector_size);
+	blocks = (size_t) tmpdiv;
 
 	/*
 	 * Size alignment check
@@ -489,11 +493,11 @@ int jffs2_do_fill_super(struct super_block *sb, void *data, int silent)
 	if ((c->sector_size * blocks) != c->flash_size) {
 		c->flash_size = c->sector_size * blocks;
 		printk(KERN_INFO "jffs2: Flash size not aligned to erasesize, reducing to %dKiB\n",
-			c->flash_size / 1024);
+			mtd64_ll_low(c->flash_size >> 10));
 	}
 
 	if (c->flash_size < 5*c->sector_size) {
-		printk(KERN_ERR "jffs2: Too few erase blocks (%d)\n", c->flash_size / c->sector_size);
+		printk(KERN_ERR "jffs2: Too few erase blocks (%d)\n", mtd64_ll_low(c->flash_size >> (ffs(c->sector_size)-1)));
 		return -EINVAL;
 	}
 
@@ -654,7 +658,11 @@ void jffs2_gc_release_page(struct jffs2_sb_info *c,
 static int jffs2_flash_setup(struct jffs2_sb_info *c) {
 	int ret = 0;
 
-	if (jffs2_cleanmarker_oob(c)) {
+// THT: MLC patch:	if (jffs2_cleanmarker_oob(c)) {
+	if (c->mtd->type == MTD_NANDFLASH) {
+		if (!(c->mtd->flags & MTD_OOB_WRITEABLE))
+			printk(KERN_INFO "JFFS2 doesn't use OOB.\n");
+
 		/* NAND flash... do setup accordingly */
 		ret = jffs2_nand_flash_setup(c);
 		if (ret)
@@ -680,7 +688,8 @@ static int jffs2_flash_setup(struct jffs2_sb_info *c) {
 
 void jffs2_flash_cleanup(struct jffs2_sb_info *c) {
 
-	if (jffs2_cleanmarker_oob(c)) {
+// THT: MLC patch:	if (jffs2_cleanmarker_oob(c)) {
+	if (c->mtd->type == MTD_NANDFLASH) {
 		jffs2_nand_flash_cleanup(c);
 	}
 

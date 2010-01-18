@@ -20,6 +20,8 @@
 #ifndef _BCMINTENET_H_
 #define _BCMINTENET_H_
 
+#define CONFIG_BCMINTEMAC_NETLINK 1
+
 #include <linux/skbuff.h>
 #include <linux/if_ether.h>
 #include <linux/netdevice.h>
@@ -187,7 +189,8 @@ typedef struct PM_Addr {
 #define BRCM_TAG_INGRESS    0x60000000
 
 #define BCMEMAC_MAX_DEVS	2
-#define BCMEMAC_NO_PHY_ID	-1
+#define BCMEMAC_NO_PHY_ID	0xff
+#define BCMEMAC_FAKE_PHY_ID	0xfe	/* emulate MII reads/writes */
 
 /*
  * device context

@@ -101,10 +101,9 @@ int cfi_varsize_frob(struct mtd_info *mtd, varsize_frob_t frob,
 	int i, first;
 	struct mtd_erase_region_info *regions = mtd->eraseregions;
 
-	if (ofs > mtd->size)
+	if (ofs > device_size(mtd))
 		return -EINVAL;
-
-	if ((len + ofs) > mtd->size)
+	if ((len + ofs) > device_size(mtd))
 		return -EINVAL;
 
 	/* Check that both start and end of the requested erase are

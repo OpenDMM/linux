@@ -276,8 +276,13 @@ static inline int mtd_proc_info (char *buf, int i)
 	if (!this)
 		return 0;
 
-	return sprintf(buf, "mtd%d: %8.8x %8.8x \"%s\"\n", i, this->size,
-		       this->erasesize, this->name);
+	if (this->size == 0) {
+		return sprintf(buf, "mtd%d: %16.16llx %8.8x \"%s\"\n", i, device_size(this),
+				this->erasesize, this->name);
+	} else {
+		return sprintf(buf, "mtd%d: %8.8x %8.8x \"%s\"\n", i, this->size,
+				this->erasesize, this->name);
+	}
 }
 
 static int mtd_read_proc (char *page, char **start, off_t off, int count,
@@ -285,10 +290,16 @@ static int mtd_read_proc (char *page, char **start, off_t off, int count,
 {
 	int len, l, i;
         off_t   begin = 0;
+	struct mtd_info *this = mtd_table[0];
 
 	mutex_lock(&mtd_table_mutex);
 
-	len = sprintf(page, "dev:    size   erasesize  name\n");
+	if (this->size == 0) {
+		len = sprintf(page, "dev:    size           erasesize  name\n");
+	} else {
+		len = sprintf(page, "dev:    size   erasesize  name\n");
+	}
+
         for (i=0; i< MAX_MTD_DEVICES; i++) {
 
                 l = mtd_proc_info(page + len, i);

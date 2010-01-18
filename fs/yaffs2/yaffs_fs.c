@@ -1385,9 +1385,19 @@ static int yaffs_sync_fs(struct super_block *sb, int wait)
 static int yaffs_sync_fs(struct super_block *sb)
 #endif
 {
+	yaffs_Device *dev = yaffs_SuperToDevice(sb);
+	struct mtd_info *mtd = yaffs_SuperToDevice(sb)->genericDevice;
 
 	T(YAFFS_TRACE_OS, (KERN_DEBUG "yaffs_sync_fs\n"));
 	
+	yaffs_GrossLock(dev);
+	yaffs_FlushEntireDeviceCache(dev);
+	yaffs_CheckpointSave(dev);
+	if (mtd->sync) {
+		mtd->sync(mtd);
+	}
+	yaffs_GrossUnlock(dev);
+
 	return 0; /* yaffs_do_sync_fs(sb);*/
 	
 }
@@ -1511,6 +1521,7 @@ static struct super_block *yaffs_internal_read_super(int yaffsVersion,
 	char devname_buf[BDEVNAME_SIZE + 1];
 	struct mtd_info *mtd;
 	int err;
+	uint64_t tmpdiv;
 
 	sb->s_magic = YAFFS_MAGIC;
 	sb->s_op = &yaffs_super_ops;
@@ -1576,7 +1587,7 @@ static struct super_block *yaffs_internal_read_super(int yaffsVersion,
 #endif
 	T(YAFFS_TRACE_OS, (" oobsize %d\n", mtd->oobsize));
 	T(YAFFS_TRACE_OS, (" erasesize %d\n", mtd->erasesize));
-	T(YAFFS_TRACE_OS, (" size %d\n", mtd->size));
+	T(YAFFS_TRACE_OS, (" size %llx\n", device_size(mtd)));
 	
 #ifdef CONFIG_YAFFS_AUTO_YAFFS2
 
@@ -1687,7 +1698,9 @@ static struct super_block *yaffs_internal_read_super(int yaffsVersion,
 
 	/* Set up the memory size parameters.... */
 
-	nBlocks = mtd->size / (YAFFS_CHUNKS_PER_BLOCK * YAFFS_BYTES_PER_CHUNK);
+	tmpdiv = (uint64_t) device_size(mtd);
+	do_div(tmpdiv, (YAFFS_CHUNKS_PER_BLOCK * YAFFS_BYTES_PER_CHUNK));
+	nBlocks = (int) tmpdiv;
 	dev->startBlock = 0;
 	dev->endBlock = nBlocks - 1;
 	dev->nChunksPerBlock = YAFFS_CHUNKS_PER_BLOCK;
@@ -1714,7 +1727,9 @@ static struct super_block *yaffs_internal_read_super(int yaffsVersion,
 		dev->nDataBytesPerChunk = mtd->oobblock;
 		dev->nChunksPerBlock = mtd->erasesize / mtd->oobblock;
 #endif
-		nBlocks = mtd->size / mtd->erasesize;
+		tmpdiv = device_size(mtd);
+		do_div(tmpdiv, mtd->erasesize);
+		nBlocks = (int) tmpdiv;
 
 		dev->nCheckpointReservedBlocks = CONFIG_YAFFS_CHECKPOINT_RESERVED_BLOCKS;
 		dev->startBlock = 0;

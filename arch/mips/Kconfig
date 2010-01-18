@@ -31,7 +31,27 @@ config MIPS_BCM3548AX_NAND
         select MIPS_BCM3548
         select HW_HAS_PCI
 	select BMIPS4380
-	# select MTD_BRCMNAND
+	select MTD_BRCMNAND
+	select MTD_BRCMNAND_VERIFY_WRITE
+	select MTD_BLOCK_ROMBLOCK
+
+config MIPS_BCM3548BX_SPI
+        bool "Support for BCM93548Bx with SPI flash"
+        select MIPS_BRCM97XXX
+        select MIPS_BCM3548B0
+        select MIPS_BCM3548
+        select HW_HAS_PCI
+	select BMIPS4380
+
+
+config MIPS_BCM3548BX_NAND
+        bool "Support for BCM93548Bx with NAND flash"
+        select MIPS_BRCM97XXX
+        select MIPS_BCM3548B0
+        select MIPS_BCM3548
+        select HW_HAS_PCI
+	select BMIPS4380
+	select MTD_BRCMNAND
 	select MTD_BRCMNAND_VERIFY_WRITE
 	select MTD_BLOCK_ROMBLOCK
 
@@ -71,11 +91,8 @@ config MIPS_BCM7038CX
 	select MIPS_BCM7038C0
 	select MIPS_BCM7038
 	select HW_HAS_PCI
-	select SYS_SUPPORTS_32BIT_KERNEL
-	select SYS_SUPPORTS_BIG_ENDIAN
-	select SYS_SUPPORTS_LITTLE_ENDIAN
-        select SYS_HAS_CPU_MIPS32_R1
-	
+	select MTI_R5K
+
 config MIPS_BCM7118AX
 	bool "Support for BCM97118Ax with NOR flash"
 	select MIPS_BRCM97XXX
@@ -171,6 +188,14 @@ config MIPS_BCM7335AX
         select MIPS_BCM7335
         select HW_HAS_PCI
 	select BMIPS4380
+
+config MIPS_BCM7420AX
+        bool "Support for BCM97420Ax with NOR flash"
+        select MIPS_BRCM97XXX
+        select MIPS_BCM7420A0
+        select MIPS_BCM7420
+        select HW_HAS_PCI
+	select BMIPS5000
 
 config MIPS_BCM97456DX
 	bool "Support for BCM97456DX board with NOR flash"
@@ -336,59 +361,43 @@ config MIPS_BCM7403AX_NAND
 	select BMIPS3300
 
 config MIPS_BCM7325AX
-       bool "Support for BCM97325Ax with NOR flash"
-       select MIPS_BRCM97XXX
-       select MIPS_BCM7325A0
-       select MIPS_BCM7325
-       # select HW_HAS_PCI
-       select SYS_SUPPORTS_32BIT_KERNEL
-       select SYS_SUPPORTS_BIG_ENDIAN
-       select SYS_SUPPORTS_LITTLE_ENDIAN
-       select SYS_SUPPORTS_MULTITHREADING
-       select SYS_HAS_CPU_MIPS32_R2
-       select MIPS_CPU_SCACHE
+	bool "Support for BCM97325Ax with NOR flash"
+	select MIPS_BRCM97XXX
+	select MIPS_BCM7325A0
+	select MIPS_BCM7325
+	select HW_HAS_PCI
+	select MTI_R34K
+	select BRCM_SCM_L2
 
 config MIPS_BCM7440BX
-       bool "Support for BCM97440Bx with NOR flash"
-       select MIPS_BRCM97XXX
-       select MIPS_BCM7440B0
-       select MIPS_BCM7440
-       select HW_HAS_PCI
-       select SYS_SUPPORTS_32BIT_KERNEL
-       select SYS_SUPPORTS_BIG_ENDIAN
-       select SYS_SUPPORTS_LITTLE_ENDIAN
-       select SYS_SUPPORTS_MULTITHREADING
-       select SYS_HAS_CPU_MIPS32_R2
-       #select MIPS_CPU_SCACHE
+	bool "Support for BCM97440Bx with NOR flash"
+	select MIPS_BRCM97XXX
+	select MIPS_BCM7440B0
+	select MIPS_BCM7440
+	select HW_HAS_PCI
+	select MTI_R24K
+	#select MIPS_CPU_SCACHE
        
 config MIPS_BCM7440BX_NAND
-       bool "Support for BCM97440Bx with NAND flash"
-       select MIPS_BRCM97XXX
-       select MIPS_BCM7440B0
-       select MIPS_BCM7440
-       select HW_HAS_PCI
-       select SYS_SUPPORTS_32BIT_KERNEL
-       select SYS_SUPPORTS_BIG_ENDIAN
-       select SYS_SUPPORTS_LITTLE_ENDIAN
-       select SYS_SUPPORTS_MULTITHREADING
-       select SYS_HAS_CPU_MIPS32_R2
-       #select MIPS_CPU_SCACHE
-       select MTD_BRCMNAND
-       select MTD_BRCMNAND_VERIFY_WRITE
-       select MTD_BLOCK_ROMBLOCK
+	bool "Support for BCM97440Bx with NAND flash"
+	select MIPS_BRCM97XXX
+	select MIPS_BCM7440B0
+	select MIPS_BCM7440
+	select HW_HAS_PCI
+	select MTI_R24K
+	#select MIPS_CPU_SCACHE
+	select MTD_BRCMNAND
+	select MTD_BRCMNAND_VERIFY_WRITE
+	select MTD_BLOCK_ROMBLOCK
        
 config MIPS_BCM7443AX
-       bool "Support for BCM97443Ax with NOR flash"
-       select MIPS_BRCM97XXX
-       select MIPS_BCM7443A0
-       select MIPS_BCM7443
-       select HW_HAS_PCI
-       select SYS_SUPPORTS_32BIT_KERNEL
-       select SYS_SUPPORTS_BIG_ENDIAN
-       select SYS_SUPPORTS_LITTLE_ENDIAN
-       select SYS_SUPPORTS_MULTITHREADING
-       select SYS_HAS_CPU_MIPS32_R2
-       #select MIPS_CPU_SCACHE
+	bool "Support for BCM97443Ax with NOR flash"
+	select MIPS_BRCM97XXX
+	select MIPS_BCM7443A0
+	select MIPS_BCM7443
+	select HW_HAS_PCI
+	select MTI_R24K
+	#select MIPS_CPU_SCACHE
 
 config MIPS_MTX1
 	bool "4G Systems MTX-1 board"
@@ -1235,6 +1244,26 @@ config LONG_LONG_SUPPORT
 	depends MIPS_BRCM
 	default n
 
+config BRCM_COMMON_PCI
+	bool "Use common Broadcom STB PCI code"
+	default n
+	depends on EXPERIMENTAL && (MIPS_BCM7405B0 || MIPS_BCM7420 || \
+		MIPS_BCM7325)
+	help
+	  Enable the new, but sparsely tested, PCI code for Broadcom STB
+	  platforms.
+
+	  This replaces arch/mips/pci/*-brcm9*.c .
+
+	  If unsure, say N.
+
+config	MIPS_BCM_NDVD
+	bool "support DVD/Blue-Ray on BRCM platform"
+	depends MIPS_BRCM
+	default n
+	help
+	Enable it to support optical storage device on BRCM platform, like CD, DVD and Blue-Ray
+
 endmenu
 
 config RWSEM_GENERIC_SPINLOCK
@@ -1366,8 +1395,9 @@ config MIPS_BRCM97XXX
 	select MIPS_BRCM
 	# Only swap on 32 bit.
 	# select SWAP_IO_SPACE_L
-	select BRCM_7XXX_SERIAL if ! (MIPS_BCM7400 || MIPS_BCM7440 || MIPS_BCM7443 ||\
-		MIPS_BCM7118 || MIPS_BCM7405 || MIPS_BCM7325 || MIPS_BCM7335)
+	select BRCM_7XXX_SERIAL if ! (MIPS_BCM7400 || MIPS_BCM7440 || \
+		MIPS_BCM7443 || MIPS_BCM7118 || MIPS_BCM7405 || \
+		MIPS_BCM7325 || MIPS_BCM7335 || MIPS_BCM7420)
 	select SYS_SUPPORTS_32BIT_KERNEL
 	select SYS_SUPPORTS_BIG_ENDIAN
 	select SYS_SUPPORTS_LITTLE_ENDIAN
@@ -1380,6 +1410,14 @@ config MIPS_BCM3548A0
 config MIPS_BCM3548
 	bool
 	depends MIPS_BCM3548A0
+
+config MIPS_BCM3548B0
+	bool
+	depends MIPS_BCM3548BX || MIPS_BCM3548BX_NAND
+
+config MIPS_BCM3548
+	bool
+	depends MIPS_BCM3548B0
 
 config MIPS_BCM3560
 	bool
@@ -1433,6 +1471,46 @@ config BMIPS4380
 	select SYS_SUPPORTS_LITTLE_ENDIAN
 	select SYS_HAS_CPU_MIPS32_R1
 	select SYS_SUPPORTS_SMP
+
+config BMIPS5000
+	bool
+	default n
+	select SYS_SUPPORTS_32BIT_KERNEL
+	select SYS_SUPPORTS_BIG_ENDIAN
+	select SYS_SUPPORTS_LITTLE_ENDIAN
+	select SYS_HAS_CPU_MIPS32_R1
+	select SYS_SUPPORTS_SMP
+	select BRCM_SCM_L2
+
+config MTI_R5K
+	bool
+	default n
+	select SYS_SUPPORTS_32BIT_KERNEL
+	select SYS_SUPPORTS_BIG_ENDIAN
+	select SYS_SUPPORTS_LITTLE_ENDIAN
+        select SYS_HAS_CPU_MIPS32_R1
+
+config MTI_R24K
+	bool
+	default n
+	select SYS_SUPPORTS_32BIT_KERNEL
+	select SYS_SUPPORTS_BIG_ENDIAN
+	select SYS_SUPPORTS_LITTLE_ENDIAN
+	select SYS_HAS_CPU_MIPS32_R2
+
+config MTI_R34K
+	bool
+	default n
+	select SYS_SUPPORTS_32BIT_KERNEL
+	select SYS_SUPPORTS_BIG_ENDIAN
+	select SYS_SUPPORTS_LITTLE_ENDIAN
+	select SYS_SUPPORTS_MULTITHREADING
+	select SYS_HAS_CPU_MIPS32_R2
+
+config BRCM_SCM_L2
+	bool
+	default n
+	select MIPS_CPU_SCACHE
 
 config BCM5325_SWITCH
 	int "Switch Mode (0 = disabled, 1 = 5325F switch with 2 ports, others is TBD)"
@@ -1523,6 +1601,14 @@ config MIPS_BCM7335A0
 config MIPS_BCM7335
 	bool
 	depends MIPS_BCM7335A0
+
+config MIPS_BCM7420A0
+	bool
+	depends MIPS_BCM7420AX
+
+config MIPS_BCM7420
+	bool
+	depends MIPS_BCM7420A0
 
 config MIPS_BCM7325A0
        bool
@@ -1741,13 +1827,13 @@ config TOSHIBA_BOARDS
 
 config SYS_SUPPORTS_PM
 	bool
-	depends on MIPS_BCM7400D0 || MIPS_BCM7405 || MIPS_BCM7335 
+	depends on MIPS_BCM7400D0 || MIPS_BCM7405 || MIPS_BCM7335 || \
+		MIPS_BCM3548 || MIPS_BCM7325
 	default y
 
 config SYS_SUPPORTS_CPUFREQ
 	bool
-	depends on MIPS_BCM7401C0 || MIPS_BCM7400D0 || MIPS_BCM7405 || \
-		MIPS_BCM7335 || MIPS_BCM3548
+	depends on MIPS_BCM7401C0 || BMIPS4380 || BMIPS5000
 	default y
 
 if SYS_SUPPORTS_PM || SYS_SUPPORTS_CPUFREQ

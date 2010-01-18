@@ -1082,17 +1082,21 @@ static void transmit_chars(struct uart_8250_port *up);
 static void serial8250_start_tx(struct uart_port *port)
 {
 	struct uart_8250_port *up = (struct uart_8250_port *)port;
+	unsigned char lsr;
 
 	if (!(up->ier & UART_IER_THRI)) {
 		up->ier |= UART_IER_THRI;
 		serial_out(up, UART_IER, up->ier);
-
 		if (up->bugs & UART_BUG_TXEN) {
 			unsigned char lsr, iir;
 			lsr = serial_in(up, UART_LSR);
 			iir = serial_in(up, UART_IIR);
 			if (lsr & UART_LSR_TEMT && iir & UART_IIR_NO_INT)
 				transmit_chars(up);
+		}
+		else { /* by hyun */
+			lsr = serial_in(up, UART_LSR);
+			if (lsr & UART_LSR_TEMT ) transmit_chars(up);
 		}
 	}
 
@@ -2197,6 +2201,16 @@ static inline void wait_for_xmitr(struct uart_8250_port *up)
 	}
 }
 
+/* added by hyun */
+static void serial8250_console_putchar(struct uart_port *port, int ch)
+{
+   struct uart_8250_port *up = (struct uart_8250_port *)port;
+
+   wait_for_xmitr(up);
+   serial_out(up, UART_TX, ch);
+}
+
+
 /*
  *	Print a string to the serial port trying not to disturb
  *	any possible real use of the port...
@@ -2219,10 +2233,11 @@ serial8250_console_write(struct console *co, const char *s, unsigned int count)
 		serial_out(up, UART_IER, UART_IER_UUE);
 	else
 		serial_out(up, UART_IER, 0);
-
 	/*
 	 *	Now, do each character
 	 */
+#if 0 
+	/* removed by hyun */
 	for (i = 0; i < count; i++, s++) {
 		wait_for_xmitr(up);
 
@@ -2236,12 +2251,18 @@ serial8250_console_write(struct console *co, const char *s, unsigned int count)
 			serial_out(up, UART_TX, 13);
 		}
 	}
+#else 
+	/* added by hyun */
+	uart_console_write(&up->port, s, count, serial8250_console_putchar);
+#endif
 
 	/*
 	 *	Finally, wait for transmitter to become empty
 	 *	and restore the IER
 	 */
 	wait_for_xmitr(up);
+	/* enable TX interrupt by hyun */
+	ier |= UART_IER_THRI;	
 	serial_out(up, UART_IER, ier);
 }
 

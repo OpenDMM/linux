@@ -1275,6 +1275,7 @@ int ata_dev_read_id(struct ata_device *dev, unsigned int *p_class,
 	unsigned int err_mask = 0;
 	const char *reason;
 	int rc;
+	u16 *id_buf;
 
 	if (ata_msg_ctl(ap))
 		ata_dev_printk(dev, KERN_DEBUG, "%s: ENTER, host %u, dev %u\n",
@@ -1303,8 +1304,22 @@ int ata_dev_read_id(struct ata_device *dev, unsigned int *p_class,
 
 	tf.protocol = ATA_PROT_PIO;
 
+	/*
+	 * NOTE: the original code put the DMA buffer in the middle of a
+	 * heavily used struct, resulting in cache coherence issues
+	 * on ATA_FLAG_PIO_DMA=1 controllers on noncoherent systems.
+	 */
+	id_buf = kmalloc(ATA_ID_WORDS * sizeof(id[0]), GFP_KERNEL);
+	if(! id_buf) {
+		rc = -ENOMEM;
+		reason = "can't allocate id_buf";
+		goto err_out;
+	}
 	err_mask = ata_exec_internal(dev, &tf, NULL, DMA_FROM_DEVICE,
-				     id, sizeof(id[0]) * ATA_ID_WORDS);
+				     id_buf, sizeof(id[0]) * ATA_ID_WORDS);
+	memcpy(id, id_buf, ATA_ID_WORDS * sizeof(id[0]));
+	kfree(id_buf);
+
 	if (err_mask) {
 		rc = -EIO;
 		reason = "I/O error";
@@ -2798,10 +2813,29 @@ int ata_std_prereset(struct ata_link *link)
 	/* Wait for !BSY if the controller can wait for the first D2H
 	 * Reg FIS and we don't know that no device is attached.
 	 */
-	if (!(ap->flags & ATA_FLAG_SKIP_D2H_BSY) && !ata_link_offline(link))
-		ata_busy_sleep(ap, ATA_TMOUT_BOOT_QUICK, ATA_TMOUT_BOOT);
+	if (!(ap->flags & ATA_FLAG_SKIP_D2H_BSY) && !ata_link_offline(link)) {
+		rc = ata_busy_sleep(ap, ATA_TMOUT_BOOT_QUICK, ATA_TMOUT_BOOT);
+		if (rc && rc != -ENODEV) {
+#if defined (CONFIG_MIPS_BCM_NDVD)
+		  if (ehc->i.flags & ATA_EHI_DID_RESET) {
+			ata_link_printk(link, KERN_WARNING, "device not ready "
+					"(errno=%d), forcing hardreset\n", rc);
+			ehc->i.action |= ATA_EH_HARDRESET;
+		  }
+		  else {
+			ata_link_printk(link, KERN_WARNING, "device not ready "
+					"(errno=%d), try softreset\n", rc);
+			ehc->i.action |= ATA_EH_SOFTRESET;
+		  }
+#else
+			ata_link_printk(link, KERN_WARNING, "device not ready "
+					"(errno=%d), forcing hardreset\n", rc);
+			ehc->i.action |= ATA_EH_HARDRESET;
+#endif
+		}
+	}
 
-	return 0;
+	return rc;
 }
 
 /**
@@ -4095,6 +4129,9 @@ static void __atapi_pio_bytes(struct ata_queued_cmd *qc, unsigned int bytes)
 	struct page *page;
 	unsigned char *buf;
 	unsigned int offset, count;
+#if defined (CONFIG_MIPS_BCM_NDVD)
+	int sg_count = 0;
+#endif
 
 	if (qc->curbytes + bytes >= qc->nbytes)
 		ap->hsm_task_state = HSM_ST_LAST;
@@ -4164,10 +4201,25 @@ next_sg:
 	if (qc->cursg_ofs == sg->length) {
 		qc->cursg++;
 		qc->cursg_ofs = 0;
+#if defined (CONFIG_MIPS_BCM_NDVD)
+		sg_count++;
+#endif
 	}
 
-	if (bytes)
+	if (bytes) {
+#if defined (CONFIG_MIPS_BCM_NDVD)
+		if (sg_count < qc->n_elem)
 		goto next_sg;
+		else {
+			printk(KERN_ERR "\n%s: RESIDUAL %d BYTES, EXCEEDS SG RESOURCES !!\n\n",
+			       __FUNCTION__, bytes);
+			BUG();
+		}
+#else
+		goto next_sg;
+#endif
+	}
+
 }
 
 /**
@@ -4655,8 +4707,13 @@ void __ata_qc_complete(struct ata_queued_cmd *qc)
 	struct ata_port *ap = qc->ap;
 	struct ata_link *link = qc->dev->link;
 
+#if defined (CONFIG_MIPS_BCM_NDVD)
+	if (qc == NULL || !(qc->flags & ATA_QCFLAG_ACTIVE))
+		return;
+#else
 	WARN_ON(qc == NULL);	/* ata_qc_from_tag _might_ return NULL */
 	WARN_ON(!(qc->flags & ATA_QCFLAG_ACTIVE));
+#endif
 
 	if (likely(qc->flags & ATA_QCFLAG_DMAMAP))
 		ata_sg_clean(qc);
@@ -6370,7 +6427,12 @@ u32 ata_wait_register(void __iomem *reg, u32 mask, u32 val,
 	unsigned long timeout;
 	u32 tmp;
 
+#ifdef CONFIG_MIPS_BRCM97XXX
+	/* see: readl/writel byteswap hack in libata.h */
+	tmp = readl(reg);
+#else
 	tmp = ioread32(reg);
+#endif
 
 	/* Calculate timeout _after_ the first read to make sure
 	 * preceding writes reach the controller before starting to
@@ -6380,7 +6442,11 @@ u32 ata_wait_register(void __iomem *reg, u32 mask, u32 val,
 
 	while ((tmp & mask) == val && time_before(jiffies, timeout)) {
 		msleep(interval_msec);
+#ifdef CONFIG_MIPS_BRCM97XXX
+		tmp = readl(reg);
+#else
 		tmp = ioread32(reg);
+#endif
 	}
 
 	return tmp;

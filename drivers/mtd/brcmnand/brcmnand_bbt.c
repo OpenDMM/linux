@@ -79,11 +79,15 @@ when	who what
 
 #include "brcmnand_priv.h"
 
+#include <linux/mtd/mtd64.h>
+
 #define PRINTK(...)
 //#define PRINTK printk
 
 extern int gClearBBT;
 extern int gdebug;
+
+char brcmNandBBTMsg[1024];
 
 	/* brcmnand=
 	 *	rescan: 	1. Rescan for bad blocks, and update existing BBT
@@ -295,7 +299,7 @@ PRINTK("<-- brcmnand_read_abs_bbt ret = %d\n", res);
 		}
 	} else {
 		res = brcmnand_read_bbt (mtd, buf, td->pages[0], 
-				__ll_low(__ll_RightShift(this->mtdSize, this->bbt_erase_shift)), bits, 0, td->reserved_block_code);
+				(uint32_t) (this->mtdSize >> this->bbt_erase_shift), bits, 0, td->reserved_block_code);
 		if (res) {
 PRINTK("<-- brcmnand_read_abs_bbt 2 ret = %d\n", res);
 			return res;
@@ -330,6 +334,8 @@ static int brcmnand_scan_write_bbt(struct mtd_info *mtd, loff_t offs, size_t len
 			  uint8_t *buf, uint8_t *oob)
 {
 	struct mtd_oob_ops ops;
+	struct brcmnand_chip *this = mtd->priv;
+	
 int ret;
 
 	ops.mode = MTD_OOB_PLACE;
@@ -339,9 +345,11 @@ int ret;
 	ops.oobbuf = oob;
 	ops.len = len;
 
-//gdebug=4;
-PRINTK("%s: Writing BBT SIg @%08x, OOB=\n", __FUNCTION__, __ll_low(offs)); print_oobbuf(oob, mtd->oobsize);
-	ret = mtd->write_oob(mtd, offs, &ops);
+
+PRINTK("%s: Writing BBT Sig @%0llx, OOB=\n", __FUNCTION__, offs); 
+if (gdebug) print_oobbuf(oob, mtd->oobsize);
+
+	ret = this->write_oob(mtd, offs, &ops);
 //gdebug = 0;
 	return ret;
 }
@@ -408,13 +416,26 @@ static int brcmnand_scan_block_full(struct mtd_info *mtd, struct nand_bbt_descr 
 
 /*
  * Scan a given block partially
+ * @offs: 	Offset of start of block
+ * @len: 		Number of pages to scan
+ * For MLC we need to read backwards from the end of the block
  */
 static int brcmnand_scan_block_fast(struct mtd_info *mtd, struct nand_bbt_descr *bd,
 			   loff_t offs, uint8_t *buf, int len)
 {
 	struct mtd_oob_ops ops;
 	int j, ret;
+	int dir;
 
+	if (!MTD_IS_MLC(mtd)) { // SLC: First and 2nd page
+		dir = 1;
+	}
+	else { // MLC: Read last page (and next to last page).
+		int pagesPerBlock = mtd->erasesize/mtd->writesize;
+		
+		dir = -1;
+		offs += (pagesPerBlock -1 ) * mtd->writesize;
+	}
 	ops.len = mtd->oobsize;
 	ops.ooblen = mtd->oobsize;
 	ops.oobbuf = buf;
@@ -422,7 +443,7 @@ static int brcmnand_scan_block_fast(struct mtd_info *mtd, struct nand_bbt_descr 
 	ops.datbuf = NULL;
 	ops.mode = MTD_OOB_PLACE;
 
-	for (j = 0; j < len; j++) {
+	for (j=0; j < len; j++) {
 		/*
 		 * Read the full oob until read_oob is fixed to
 		 * handle single byte reads for 16 bit
@@ -435,7 +456,7 @@ static int brcmnand_scan_block_fast(struct mtd_info *mtd, struct nand_bbt_descr 
 		if (check_short_pattern(buf, bd))
 			return 1;
 
-		offs += mtd->writesize;
+		offs += (dir * mtd->writesize);
 	}
 	return 0;
 }
@@ -455,8 +476,9 @@ static int brcmnand_create_bbt(struct mtd_info *mtd, uint8_t *buf,
 	struct nand_bbt_descr *bd, int chip)
 {
 	struct brcmnand_chip *this = mtd->priv;
-	int i, numblocks, len, scanlen;
-	int startblock;
+	int i, len, scanlen;
+	uint64_t numblocks, startblock;
+	
 	loff_t from;
 	size_t readlen;
 
@@ -466,7 +488,7 @@ PRINTK("-->brcmnand_create_bbt, bbt_erase_shift=%d, this->page_shift=%d\n", this
 
 	if (bd->options & NAND_BBT_SCANALLPAGES)
 		len = 1 << (this->bbt_erase_shift - this->page_shift);
-	else {
+	else { // Also for MLC
 		if (bd->options & NAND_BBT_SCAN2NDPAGE)
 			len = 2;
 		else
@@ -486,8 +508,8 @@ PRINTK("-->brcmnand_create_bbt, bbt_erase_shift=%d, this->page_shift=%d\n", this
 	if (chip == -1) {
 		/* Note that numblocks is 2 * (real numblocks) here, see i+=2
 		 * below as it makes shifting and masking less painful */
-		numblocks = mtd->size >> (this->bbt_erase_shift - 1);
-		startblock = 0;
+		numblocks = device_size(mtd) >> (this->bbt_erase_shift - 1);
+		startblock = 0ULL;
 		from = 0LL;
 	} else {
 		if (chip >= this->numchips) {
@@ -498,11 +520,11 @@ PRINTK("-->brcmnand_create_bbt, bbt_erase_shift=%d, this->page_shift=%d\n", this
 		numblocks = this->chipSize >> (this->bbt_erase_shift - 1);
 		startblock = chip * numblocks;
 		numblocks += startblock;
-		from = __ll_LeftShift32(startblock, (this->bbt_erase_shift - 1));
+		from = startblock << (this->bbt_erase_shift - 1);
 	}
-if (gdebug > 3) { char msg[20];
-PRINTK("Starting for loop: from=%s bd->options=%08x, startblock=%d numblocks=%d\n", 
-__ll_sprintf(msg, from), bd->options, startblock, numblocks);
+if (gdebug > 3) { 
+PRINTK("Starting for loop: from=%0llx bd->options=%08x, startblock=%d numblocks=%d\n", 
+from, bd->options, mtd64_ll_low(startblock), mtd64_ll_low(numblocks));
 }
 	for (i = startblock; i < numblocks;) {
 		int ret;
@@ -550,14 +572,15 @@ static int brcmnand_search_bbt (struct mtd_info *mtd, uint8_t *buf, struct nand_
 {
 	struct brcmnand_chip *this = mtd->priv;
 	int i, chips;
-	int bits, startblock, block, dir;
+	uint32_t bits, startblock, block;
+	int dir;
 	int scanlen = mtd->writesize + mtd->oobsize;
 	int bbtblocks;
 	int blocktopage = this->bbt_erase_shift - this->page_shift;
 
 	/* Search direction top -> down ? */
 	if (td->options & NAND_BBT_LASTBLOCK) {
-		startblock = __ll_low(__ll_RightShift(this->mtdSize, this->bbt_erase_shift)) -1;
+		startblock = (uint32_t) (this->mtdSize >> this->bbt_erase_shift) -1;
 		dir = -1;
 	} else {
 		startblock = 0;
@@ -571,7 +594,7 @@ static int brcmnand_search_bbt (struct mtd_info *mtd, uint8_t *buf, struct nand_
 		startblock &= bbtblocks - 1;
 	} else {
 		chips = 1;
-		bbtblocks = __ll_low(__ll_RightShift(this->mtdSize, this->bbt_erase_shift));
+		bbtblocks = (uint32_t)(this->mtdSize >> this->bbt_erase_shift);
 
 	}
 
@@ -586,7 +609,7 @@ static int brcmnand_search_bbt (struct mtd_info *mtd, uint8_t *buf, struct nand_
 		for (block = 0; block < td->maxblocks; block++) {
 
 			int actblock = startblock + dir * block;
-			loff_t offs = __ll_LeftShift32(actblock, this->bbt_erase_shift);
+			loff_t offs = (uint64_t) actblock << this->bbt_erase_shift;
 
 			/* Read first page */
 			brcmnand_scan_read_raw(mtd, buf, offs, mtd->writesize);
@@ -657,17 +680,18 @@ static int brcmnand_write_bbt(struct mtd_info *mtd, uint8_t *buf,
 {
 	struct brcmnand_chip *this = mtd->priv;
 	struct erase_info einfo;
-	int i, j, res, chip = 0, skip;
-	int bits, startblock, dir, page, offs, numblocks, sft, sftmsk;
-	int nrchips, bbtoffs, pageoffs, ooboffs;
+	int i, j, res, chip = 0, skip, dir;
+	uint32_t bits, offs, sft, sftmsk, bbtoffs;
+	uint64_t startblock, numblocks, page, i64;
+	int nrchips,  pageoffs, ooboffs;
 	uint8_t msk[4];
 	uint8_t rcode = td->reserved_block_code;
 	size_t retlen, len = 0;
 	loff_t to;
 	struct mtd_oob_ops ops;
 
-PRINTK("--> %s\n", __FUNCTION__);
 
+DEBUG(MTD_DEBUG_LEVEL3, "-->%s\n", __FUNCTION__);
 	ops.ooblen = mtd->oobsize;
 	ops.ooboffs = 0;
 	ops.datbuf = NULL;
@@ -677,7 +701,7 @@ PRINTK("--> %s\n", __FUNCTION__);
 		rcode = 0xff;
 	/* Write bad block table per chip rather than per device ? */
 	if (td->options & NAND_BBT_PERCHIP) {
-		numblocks = (int) (this->chipSize >> this->bbt_erase_shift);
+		numblocks =  (this->chipSize >> this->bbt_erase_shift);
 		/* Full device write or specific chip ? */
 		if (chipsel == -1) {
 			nrchips = this->numchips;
@@ -686,7 +710,7 @@ PRINTK("--> %s\n", __FUNCTION__);
 			chip = chipsel;
 		}
 	} else {
-		numblocks = __ll_low(__ll_RightShift(this->mtdSize, this->bbt_erase_shift));
+		numblocks =  (this->mtdSize >> this->bbt_erase_shift);
 		nrchips = 1;
 	}
 	
@@ -699,7 +723,7 @@ PRINTK("numblocks=%d, nrchips=%d\n", numblocks, nrchips);
 		 * This applies for absolute placement too, as we have the
 		 * page nr. in td->pages.
 		 */
-		if (td->pages[chip] != -1) {
+		if (td->pages[chip] != -1LL) {
 			page = td->pages[chip];
 PRINTK("There is already a version of the table, go ahead and write it\n");
 			goto write;
@@ -717,19 +741,19 @@ PRINTK("There is already a version of the table, go ahead and write it\n");
 		skip = 0;
 
 write_retry:
-printk("startblock=%08x, dir=%d, td->maxblocks=%d, skip=%d\n", startblock, dir, td->maxblocks, skip);
+printk("%s: write_retry: startblock=%0llx, dir=%d, td->maxblocks=%d, skip=%d\n", 
+	__FUNCTION__, startblock, dir, td->maxblocks, skip);
 
 		for (i = skip; i < td->maxblocks; i++) {
-			int block = startblock + dir * i;
-
-
+			uint64_t block = startblock + dir * i;
+			uint32_t blockindex = (uint32_t) (block >> 2);
 
 			/* Check, if the block is bad */
 
-PRINTK("%s: Checking BBT: i=%d, block=%08x, BBT=%08x\n", 
-__FUNCTION__, i, block, this->bbt[block >> 2]);
+PRINTK("%s: Checking BBT: i=%d, block=%0llx, BBT=%08x\n", 
+__FUNCTION__, i, block, this->bbt[blockindex]);
 			
-			switch ((this->bbt[block >> 2] >>
+			switch ((this->bbt[blockindex] >>
 				 (2 * (block & 0x03))) & 0x03) {
 			case 0x01:
 			case 0x03:
@@ -763,16 +787,16 @@ PRINTK("%s: bits=%d\n", __FUNCTION__, bits);
 		default: return -EINVAL;
 		}
 
-		bbtoffs = chip * (numblocks >> 2);
+		bbtoffs = chip * ((uint32_t) (numblocks >> 2));
 
-		to = __ll_LeftShift32(page, this->page_shift);
+		to = (uint64_t) page << this->page_shift;
 
 		/* Must we save the block contents ? */
 		if (td->options & NAND_BBT_SAVECONTENT) {
 			/* Make it block aligned */
 PRINTK("%s: NAND_BBT_SAVECONTENT\n", __FUNCTION__);
 			//to &= ~((loff_t) ((1 << this->bbt_erase_shift) - 1));
-			to = __ll_and32(to, ~((1 << this->bbt_erase_shift) - 1));
+			to = to & ( ~((1 << this->bbt_erase_shift) - 1));
 			len = 1 << this->bbt_erase_shift;
 			res = mtd->read(mtd, to, len, &retlen, buf);
 			if (res < 0) {
@@ -794,7 +818,9 @@ PRINTK("%s: NAND_BBT_SAVECONTENT\n", __FUNCTION__);
 				goto outerr;
 
 			/* Calc the byte offset in the buffer */
-			pageoffs = page - __ll_low(__ll_RightShift(to, this->page_shift));
+			pageoffs = page - (to >> this->page_shift);
+
+			// offs is offset from start of buffer, so it is OK to be 32bit.
 			offs = pageoffs << this->page_shift;
 			/* Preset the bbt area with 0xff */
 			memset (&buf[offs], 0xff, (size_t)(numblocks >> sft));
@@ -817,28 +843,41 @@ PRINTK("%s: Not NAND_BBT_SAVECONTENT\n", __FUNCTION__);
 		}
 
 		/* walk through the memory table */
-		for (i = 0; i < numblocks; ) {
+		/*
+		 * THT: Right now we are safe, but when numblocks exceed 32bit, 
+		 * then we need to look at these codes again,
+		 * as we may need to break the BBT into 2 or more tables that a uint32_t can index.
+		 */
+		for (i64 = 0ULL; i64 < numblocks; ) {
 			uint8_t dat;
-			dat = this->bbt[bbtoffs + (i >> 2)];
-			for (j = 0; j < 4; j++ , i++) {
-				int sftcnt = (i << (3 - sft)) & sftmsk;
+			uint32_t irs2 = (uint32_t) (i64 >> 2); // Ihdex into BBT
+
+			/*
+			 * Make sure that the cast above for b64i is not lossy
+			 */
+			if (mtd64_ll_high(i64 >> 2)) {
+				printk(KERN_ERR "FIXME: %s: integer index to BBT overflow %0llx\n", __FUNCTION__, i64 >> 2);
+			}
+			dat = this->bbt[bbtoffs + irs2];
+			for (j = 0; j < 4; j++ , i64++) {
+				uint32_t sftcnt = (uint32_t) ((i64 << (3 - sft)) & sftmsk);
 				/* Do not store the reserved bbt blocks ! */
-				buf[offs + (i >> sft)] &=
+				buf[offs + (uint32_t) (i64 >> sft)] &=
 					~(msk[dat & 0x03] << sftcnt);
 				dat >>= 2;
 			}
 		}
 		
-
 		memset (&einfo, 0, sizeof (einfo));
 		einfo.mtd = mtd;
-		einfo.addr = __ll_low(to);
-		//einfo.addr_hi = __ll_high(to);
-		einfo.len = 1 << this->bbt_erase_shift;
+		einfo.addr = to;
+		
+		einfo.len = 1ULL << this->bbt_erase_shift;
 		res = this->erase_bbt (mtd, &einfo, 1, 1); // Do not look up BBT
 		if (res < 0) {
-			printk (KERN_ERR "brcmnand_bbt: Error during block erase: %d\n", res);
-			goto outerr;
+			printk (KERN_ERR "brcmnand_bbt: Error during block erase at %0llx: %d\n", to, res);
+			skip++;
+			goto write_retry;
 		}
 
 //gdebug = 4;
@@ -847,6 +886,8 @@ PRINTK("%s: Not NAND_BBT_SAVECONTENT\n", __FUNCTION__);
 		if (res < 0) {
 			// THT: If writing reports a bad block, we will skip it, and retry.  Eventually may
 			// run out of td->maxblocks
+			printk(KERN_INFO "write_bbt returns flash status error at %0llx, skipping and retrying...\n",
+				to);
 			skip++;
 			goto write_retry;
 		}
@@ -878,7 +919,7 @@ static inline int brcmnand_memory_bbt (struct mtd_info *mtd, struct nand_bbt_des
 	struct brcmnand_chip *this = mtd->priv;
 
 	bd->options &= ~NAND_BBT_SCANEMPTY;
-	return brcmnand_create_bbt (mtd, this->buffers.databuf, bd, -1);
+	return brcmnand_create_bbt (mtd, this->buffers->databuf, bd, -1);
 }
 
 /**
@@ -1010,7 +1051,8 @@ writecheck:
 static void mark_bbt_region (struct mtd_info *mtd, struct nand_bbt_descr *td)
 {
 	struct brcmnand_chip *this = mtd->priv;
-	int i, j, chips, block, nrblocks, update;
+	int i, j, update;
+	uint32_t chips, block, nrblocks;
 	uint8_t oldval, newval;
 
 	/* Do we have a bbt per chip ? */
@@ -1019,7 +1061,7 @@ static void mark_bbt_region (struct mtd_info *mtd, struct nand_bbt_descr *td)
 		nrblocks = (int)(this->chipSize >> this->bbt_erase_shift);
 	} else {
 		chips = 1;
-		nrblocks = __ll_low(__ll_RightShift(this->mtdSize, this->bbt_erase_shift));
+		nrblocks = (uint32_t) (this->mtdSize >> this->bbt_erase_shift);
 	}
 
 	for (i = 0; i < chips; i++) {
@@ -1075,15 +1117,18 @@ static void mark_bbt_region (struct mtd_info *mtd, struct nand_bbt_descr *td)
 int brcmnand_scan_bbt (struct mtd_info *mtd, struct nand_bbt_descr *bd)
 {
 	struct brcmnand_chip *this = mtd->priv;
-	int len, res = 0;
+	int  res = 0;
+	uint32_t len;
 	uint8_t *buf;
 	struct nand_bbt_descr *td = this->bbt_td;
 	struct nand_bbt_descr *md = this->bbt_md;
 
-	len = __ll_low(__ll_RightShift(this->mtdSize, this->bbt_erase_shift + 2));
+	len = (uint32_t) (this->mtdSize >> (this->bbt_erase_shift + 2));
 	/* Allocate memory (2bit per block) */
 //printk("brcmnand_scan_bbt: Allocating %d byte buffer\n", len);
-	this->bbt = (uint8_t*) vmalloc (len);
+
+	this->bbt = (uint8_t*) BRCMNAND_malloc (len);
+
 	if (!this->bbt) 
 	{
 		printk (KERN_ERR "brcmnand_scan_bbt: Out of memory, bbt_erase_shift=%d, len=%d\n", 
@@ -1100,7 +1145,7 @@ int brcmnand_scan_bbt (struct mtd_info *mtd, struct nand_bbt_descr *bd)
 	if (!td) {
 		if ((res = brcmnand_memory_bbt(mtd, bd))) {
 			printk (KERN_ERR "brcmnand_bbt: Can't scan flash and build the RAM-based BBT\n");
-			vfree(this->bbt);
+			BRCMNAND_free(this->bbt);
 			this->bbt = NULL;
 		}
 		return res;
@@ -1111,12 +1156,12 @@ int brcmnand_scan_bbt (struct mtd_info *mtd, struct nand_bbt_descr *bd)
 //printk("%s: len before OOB = %08x\n", __FUNCTION__, len);
 	len += (len >> this->page_shift) * (mtd->oobsize);
 //printk("%s: Inc OOB - Allocating %08x byte buffer\n", __FUNCTION__, len);
-	buf = vmalloc (len);
+	buf = BRCMNAND_malloc (len);
 	if (!buf) {
 		printk (KERN_ERR "%s: Out of memory 2, bbt_erase_shift=%d, len=%dx\n", 
 			__FUNCTION__, this->bbt_erase_shift, len  );
 		
-		vfree (this->bbt);
+		BRCMNAND_free (this->bbt);
 		
 		this->bbt = NULL;
 		return -ENOMEM;
@@ -1138,7 +1183,7 @@ int brcmnand_scan_bbt (struct mtd_info *mtd, struct nand_bbt_descr *bd)
 	if (md)
 		mark_bbt_region (mtd, md);
 
-	vfree (buf);
+	BRCMNAND_free (buf);
 	return res;
 }
 
@@ -1159,14 +1204,16 @@ int brcmnand_update_bbt (struct mtd_info *mtd, loff_t offs)
 	struct nand_bbt_descr *td = this->bbt_td;
 	struct nand_bbt_descr *md = this->bbt_md;
 
+DEBUG(MTD_DEBUG_LEVEL3, "-->%s offs=%0llx\n", __FUNCTION__, offs);
+
 	if (!this->bbt || !td)
 		return -EINVAL;
 
-	len = __ll_low(__ll_RightShift(this->mtdSize, (this->bbt_erase_shift + 2)));
+	len = (uint32_t) (this->mtdSize >> (this->bbt_erase_shift + 2));
 	/* Allocate a temporary buffer for one eraseblock incl. oob */
 	len = (1 << this->bbt_erase_shift);
 	len += (len >> this->page_shift) * mtd->oobsize;
-	buf = vmalloc (len);
+	buf = BRCMNAND_malloc (len);
 	if (!buf) {
 		printk (KERN_ERR "brcmnand_update_bbt: Out of memory\n");
 		return -ENOMEM;
@@ -1199,7 +1246,7 @@ int brcmnand_update_bbt (struct mtd_info *mtd, loff_t offs)
 	}
 
 out:
-	vfree (buf);
+	BRCMNAND_free (buf);
 	return res;
 }
 
@@ -1215,11 +1262,20 @@ static struct nand_bbt_descr smallpage_memorybased = {
 };
 
 static struct nand_bbt_descr largepage_memorybased = {
-	.options = 0,
+	.options = NAND_BBT_SCAN2NDPAGE,
 	.offs = 0,
 	.len = 2,
 	.pattern = scan_ff_pattern
 };
+
+/*
+static struct nand_bbt_descr mlc_4kpage_memorybased = {
+	.options = NAND_BBT_SCAN2NDPAGE,
+	.offs = 0,
+	.len = 1,
+	.pattern = scan_ff_pattern
+};
+*/
 
 static struct nand_bbt_descr smallpage_flashbased = {
 	.options = NAND_BBT_SCAN2NDPAGE,
@@ -1234,6 +1290,15 @@ static struct nand_bbt_descr largepage_flashbased = {
 	.len = 2,
 	.pattern = scan_ff_pattern
 };
+
+/* 2K & 4K page MLC NAND use same pattern */
+static struct nand_bbt_descr mlc_flashbased = {
+	.options = NAND_BBT_SCAN2NDPAGE,
+	.offs = 0,
+	.len = 1,
+	.pattern = scan_ff_pattern
+};
+
 
 static uint8_t scan_agand_pattern[] = { 0x1C, 0x71, 0xC7, 0x1C, 0x71, 0xC7 };
 
@@ -1272,24 +1337,46 @@ static struct nand_bbt_descr bbt_mirror_descr = {
 	.pattern = mirror_pattern
 };
 
+static struct nand_bbt_descr bbt_mlc_main_descr = {
+	.options = NAND_BBT_LASTBLOCK | NAND_BBT_CREATE | NAND_BBT_WRITE
+		| NAND_BBT_2BIT | NAND_BBT_VERSION /*| NAND_BBT_PERCHIP */,
+	.offs =	1, 
+	.len = 4,
+	.veroffs = 5, /* THT: Changed from 12 */
+	.maxblocks = 8, /* THT: Will update later, based on 4MB partition reserved for BBT */
+	.pattern = bbt_pattern
+};
+
+static struct nand_bbt_descr bbt_mlc_mirror_descr = {
+	.options = NAND_BBT_LASTBLOCK | NAND_BBT_CREATE | NAND_BBT_WRITE
+		| NAND_BBT_2BIT | NAND_BBT_VERSION /* | NAND_BBT_PERCHIP */,
+	.offs =	1, /* THT: Changed from 8 */
+	.len = 4,
+	.veroffs = 5,  /* THT: Changed from 12 */
+	.maxblocks = 8,
+	.pattern = mirror_pattern
+};
+
 
 
 static int brcmnand_displayBBT(struct mtd_info* mtd)
 {
 	struct brcmnand_chip *this = mtd->priv;
-	int bOffset, bOffsetStart, bOffsetEnd;
+	loff_t bOffset, bOffsetStart, bOffsetEnd;
 	//unsigned char oobbuf[64];
 	//struct nand_oobinfo oobsel;
 	int res;
+	// Size of BBT is 1MB if total flash is less than 512MB, 4MB otherwise
+	int bbtSize = this->mtdSize > (512<<20) ? 4 << 20 : 1 << 20;
 
 	bOffsetStart = 0;
-	bOffsetEnd = __ll_sub(this->mtdSize, __ll_constructor(0, 1 << 20)); // Skip BBT itself
+	bOffsetEnd = this->mtdSize - bbtSize; // Skip BBT itself
 
 	printk(KERN_INFO "----- Contents of BBT -----\n");
-	for (bOffset=bOffsetStart; bOffset < bOffsetEnd; bOffset += mtd->erasesize) {
+	for (bOffset=bOffsetStart; bOffset < bOffsetEnd; bOffset = bOffset + mtd->erasesize) {
 		res = this->isbad_bbt(mtd, bOffset, 1);
 		if (res) {
-			printk(KERN_INFO "Bad block at %08x\n", bOffset);
+			printk(KERN_INFO "Bad block at %0llx\n", bOffset);
 		}
 	}
 	printk(KERN_INFO "----- END Contents of BBT -----\n");
@@ -1307,17 +1394,25 @@ static int brcmnand_displayBBT(struct mtd_info* mtd)
 static void brcmnand_preprocessKernelArg(struct mtd_info *mtd)
 {
 	struct brcmnand_chip *this = mtd->priv;
-	int bOffset, ret, needBBT, bOffsetStart=0, bOffsetEnd=0;
+
+	int ret, needBBT; 
+	uint64_t bOffset, bOffsetStart=0, bOffsetEnd=0;
+	int bbtSize = this->mtdSize > (512<<20) ? 4 << 20 : 1 << 20;
+
 	//int page;
 
-PRINTK("%s: gClearBBT=%d, size=%08x, erasesize=%08x\n", __FUNCTION__, gClearBBT, mtd->size, mtd->erasesize);
+
+PRINTK("%s: gClearBBT=%d, size=%016llx, erasesize=%08x\n", __FUNCTION__, gClearBBT, device_size(mtd), mtd->erasesize);
+
 
 	switch (gClearBBT) {
 
 	case NANDCMD_CLEARBBT: // Force rescan of BBT (DANGEROUS, may lose Mfg's BIs).
-		bOffsetStart = mtd->size - (1<<20);  // BBT partition is 1MB
-		bOffsetEnd = __ll_sub(this->mtdSize, mtd->erasesize);
-PRINTK("%s: gClearBBT=clearbbt, start=%08x, end=%08x\n", __FUNCTION__, bOffsetStart, bOffsetEnd);
+
+		bOffsetStart = this->mtdSize - bbtSize; 
+		bOffsetEnd = this->mtdSize - mtd->erasesize;
+PRINTK("%s: gClearBBT=clearbbt, start=%0llx, end=%0llx\n", __FUNCTION__, 
+	bOffsetStart, bOffsetEnd);
 		break;
 
 	case NANDCMD_SHOWBBT:
@@ -1334,7 +1429,7 @@ PRINTK("%s: gClearBBT=clearbbt, start=%08x, end=%08x\n", __FUNCTION__, bOffsetSt
 		break;
 	} // switch
 
-	printk("Erasing flash from %08x to %08x\n", bOffsetStart, bOffsetEnd);
+	printk("Erasing flash from %016llx to %016llx\n", bOffsetStart, bOffsetEnd);
 
 	/*
 	 * Clear ECC registers 
@@ -1400,14 +1495,15 @@ PRINTK("%s: gClearBBT=clearbbt, start=%08x, end=%08x\n", __FUNCTION__, bOffsetSt
 		}
 #endif
 		
-		PRINTK("brcmnand flag=%d: Erasing block at %08x\n", gClearBBT, bOffset);
+		PRINTK("brcmnand flag=%d: Erasing block at %0llx\n", 
+			gClearBBT, bOffset);
 		this->ctrl_writeAddr(this, bOffset, 0);
 
 		this->ctrl_write(BCHP_NAND_CMD_START, OP_BLOCK_ERASE);
 		// Wait until flash is ready
 		ret = this->write_is_complete(mtd, &needBBT);
 		if (needBBT) {
-			printk(KERN_WARNING "%s: Erase failure, marking bad block @%08x\n", __FUNCTION__, bOffset);
+			printk(KERN_WARNING "%s: Erase failure, marking bad block @%016llx\n", __FUNCTION__, bOffset);
 			ret = this->block_markbad(mtd, bOffset);
 		}
 	}
@@ -1428,11 +1524,14 @@ PRINTK("%s: gClearBBT=clearbbt, start=%08x, end=%08x\n", __FUNCTION__, bOffsetSt
 static void brcmnand_postprocessKernelArg(struct mtd_info *mtd)
 {
 	struct brcmnand_chip *this = mtd->priv;
-	UL_OFF_T bOffset, bOffsetStart = 0, bOffsetEnd = 0;
-	int ret, needBBT;
-	//int page;
 
-PRINTK("%s: gClearBBT=%d, size=%08x, erasesize=%08x\n", __FUNCTION__, gClearBBT, mtd->size, mtd->erasesize);
+	int ret, needBBT; 
+	//uint64_t bOffset, bOffsetStart=0, bOffsetEnd=0;
+	uint64_t bOffset, bOffsetStart = 0, bOffsetEnd = 0;
+	int bbtSize = this->mtdSize > (512<<20) ? 4 << 20 : 1 << 20;
+	
+PRINTK("%s: gClearBBT=%d, size=%016llx, erasesize=%08x\n", 
+	__FUNCTION__, gClearBBT, device_size(mtd), mtd->erasesize);
 
 	switch (gClearBBT) {
 	case NANDCMD_SHOWBBT:
@@ -1451,7 +1550,7 @@ PRINTK("%s: gClearBBT=%d, size=%08x, erasesize=%08x\n", __FUNCTION__, gClearBBT,
 	case NANDCMD_ERASE:
 		// Force erase of entire flash (except BBT), and rescan of BBT:
 		bOffsetStart = 0LL;
-		bOffsetEnd = __ll_isub(this->mtdSize, 1<<20); // BBT partition is 1MB
+		bOffsetEnd = this->mtdSize - bbtSize; // BBT partition is 1MB
 //printk("%s: gClearBBT=erase|eraseall, start=%08x, end=%08x\n", __FUNCTION__, bOffsetStart, bOffsetEnd);
 		break;
 
@@ -1462,13 +1561,13 @@ PRINTK("%s: gClearBBT=%d, size=%08x, erasesize=%08x\n", __FUNCTION__, gClearBBT,
 
 	// printk("Erasing flash from %08x to %08x\n", bOffsetStart, bOffsetEnd);
 			
-	for (bOffset=bOffsetStart; __ll_is_less(bOffset,  bOffsetEnd); 
-			bOffset = __ll_add32(bOffset, mtd->erasesize)) 
+	for (bOffset=bOffsetStart; bOffset <  bOffsetEnd; 
+			bOffset = bOffset + mtd->erasesize) 
 	{
 #if CONFIG_MTD_BRCMNAND_VERSION < CONFIG_MTD_BRCMNAND_VERS_1_0
 		unsigned long pAddr = this->pbase + bOffset;
 #else
-		L_OFF_T pAddr = __ll_add32(bOffset, this->pbase);
+		uint64_t pAddr = bOffset + this->pbase;
 #endif
 
 		int i;
@@ -1482,8 +1581,7 @@ PRINTK("%s: gClearBBT=%d, size=%08x, erasesize=%08x\n", __FUNCTION__, gClearBBT,
 			continue;
 #else
 		if (gClearBBT == NANDCMD_ERASE && 
-			!__ll_is_less(pAddr, __ll_constructor(0,0x1fc00000)) &&
-			__ll_is_less(pAddr , __ll_constructor(0,0x1ff00000)))
+			(pAddr >= 0x1fc00000) && (pAddr < 0x1ff00000))
 			continue;
 #endif
 
@@ -1502,22 +1600,37 @@ PRINTK("%s: gClearBBT=%d, size=%08x, erasesize=%08x\n", __FUNCTION__, gClearBBT,
 		else {
 			unsigned char oobbuf[64];
 			//int autoplace = 0;
-			int raw = 1;
+			//int raw = 1;
 			//struct nand_oobinfo oobsel;
 			int numpages;
-			int blockPage = __ll_RightShift(bOffset, this->page_shift);
+			/* THT: This __can__ be a 36bit integer (NAND controller address space is 48bit wide, minus
+			 * page size of 2*12, therefore 36bit max
+			  */
+			uint64_t blockPage = bOffset >> this->page_shift;
+			int dir;
+			uint64_t page;
 			
 			/* How many pages should we scan */
 			if (this->badblock_pattern->options & NAND_BBT_SCAN2NDPAGE) {
 				numpages = 2;
 			} else {
-				numpages = this->blockSize/this->pageSize;
+				numpages = 1;
+			}
+
+			if (!NAND_IS_MLC(this)) { // SLC: First and 2nd page
+				dir = 1;
+				page = blockPage; // first page of block
+			}
+			else { // MLC: Read last page
+				int pagesPerBlock = mtd->erasesize/mtd->writesize;
+				
+				dir = -1;
+				page = blockPage + pagesPerBlock - 1; // last page of block
 			}
 			
-			for (i=0; i<numpages; i++) {
-				int page = blockPage +  i;
+			for (i=0; i<numpages; i++, page += i*dir) {
 				int res;
-				int retlen = 0;
+				//int retlen = 0;
 
 				res = this->read_page_oob(mtd, oobbuf, page);
 				if (!res) {
@@ -1525,13 +1638,14 @@ PRINTK("%s: gClearBBT=%d, size=%08x, erasesize=%08x\n", __FUNCTION__, gClearBBT,
 						isBadBlock = 1;
 
 						if (NANDCMD_RESCAN == gClearBBT) 
-							printk(KERN_INFO "Found bad block at offset %08x\n", __ll_low(page));
+							printk(KERN_INFO "Found bad block at offset %0llx\n", page);
 
 						break;
 					}
 				}
 				else {
-					printk(KERN_DEBUG "brcmnand_read_pageoob returns %d for page %08x\n", res, __ll_low(page));
+					printk(KERN_DEBUG "brcmnand_read_pageoob returns %d for page %0llx\n",
+						res, page);
 				}
 			}
 				
@@ -1540,9 +1654,10 @@ PRINTK("%s: gClearBBT=%d, size=%08x, erasesize=%08x\n", __FUNCTION__, gClearBBT,
 		switch (gClearBBT) {
 		case NANDCMD_ERASE:
 			/* FALLTHROUGH */
+//gdebug=4;
 		case NANDCMD_ERASEALL:
 			if (isBadBlock) {
-				printk(KERN_INFO "Skipping Bad Block at %08x\n", __ll_low(bOffset));
+				printk(KERN_INFO "Skipping Bad Block at %0llx\n", bOffset);
 				continue;
 			}
 			
@@ -1553,14 +1668,14 @@ PRINTK("%s: gClearBBT=%d, size=%08x, erasesize=%08x\n", __FUNCTION__, gClearBBT,
 			// Wait until flash is ready
 			ret = this->write_is_complete(mtd, &needBBT);
 			if (needBBT) {
-				printk(KERN_INFO "%s: Marking bad block @%08x\n", __FUNCTION__, __ll_low(bOffset));
+				printk(KERN_INFO "%s: Marking bad block @%0llx\n", __FUNCTION__, bOffset);
 				ret = this->block_markbad(mtd, bOffset);
 			}
 			break;
 			
 		case NANDCMD_RESCAN:
 			if (isBadBlock) {
-				printk(KERN_INFO "%s: Marking bad block @%08x\n", __FUNCTION__, __ll_low(bOffset));
+				printk(KERN_INFO "%s: Marking bad block @%0llx\n", __FUNCTION__, bOffset);
 				ret = this->block_markbad(mtd, bOffset);
 			}
 			break;
@@ -1588,7 +1703,7 @@ PRINTK("%s: gClearBBT=%d, size=%08x, erasesize=%08x\n", __FUNCTION__, gClearBBT,
 static int brcmnand_isbad_bbt (struct mtd_info *mtd, loff_t offs, int allowbbt)
 {
 	struct brcmnand_chip *this = mtd->priv;
-	int block;
+	uint32_t block; // Used as an index, so 32bit.
 	uint8_t	res;
 
 //printk( "--> %s: bbt info for offs 0x%08x: \n", __FUNCTION__, __ll_low(offs));
@@ -1597,13 +1712,13 @@ static int brcmnand_isbad_bbt (struct mtd_info *mtd, loff_t offs, int allowbbt)
 	 * Get block number * 2. It's more convenient to do it in the following way
 	 *  but is actually the same thing as in the comment above
 	 */
-	block = __ll_low(__ll_RightShift(offs,  (this->bbt_erase_shift - 1)));
+	block = (uint32_t) (offs >>  (this->bbt_erase_shift - 1));
 	res = (this->bbt[block >> 3] >> (block & 0x06)) & 0x03;
 
 	DEBUG (MTD_DEBUG_LEVEL3, "brcmnand_isbad_bbt(): bbt info for offs 0x%08x: (block %d) 0x%02x\n",
 		(unsigned int)offs, block >> 1, res);
 
-if (res) PRINTK("%s: res=%x, allowbbt=%d at block %08x\n", __FUNCTION__, res, allowbbt, (unsigned int) offs);
+//if (res) PRINTK("%s: res=%x, allowbbt=%d at block %08x\n", __FUNCTION__, res, allowbbt, (unsigned int) offs);
 
 	switch ((int)res) {
 	case 0x00:	// Good block
@@ -1653,15 +1768,29 @@ int brcmnand_default_bbt (struct mtd_info *mtd)
 
 	/* Is a flash based bad block table requested ? */
 	if (this->options & NAND_USE_FLASH_BBT) {
-		/* Use the default pattern descriptors */
-		if (!this->bbt_td) {
-			this->bbt_td = &bbt_main_descr;
-			this->bbt_md = &bbt_mirror_descr;
+		if (!NAND_IS_MLC(this)) {
+			/* Use the default pattern descriptors */
+			if (!this->bbt_td) {
+				this->bbt_td = &bbt_main_descr;
+				this->bbt_md = &bbt_mirror_descr;
+			}
+			if (!this->badblock_pattern) {
+				this->badblock_pattern = (mtd->writesize > 512) ? &largepage_flashbased : &smallpage_flashbased;
+			}
 		}
-		if (!this->badblock_pattern) {
-			this->badblock_pattern = (mtd->writesize > 512) ? &largepage_flashbased : &smallpage_flashbased;
+		else { // MLC
+			/* Use the default pattern descriptors */
+			if (!this->bbt_td) {
+				this->bbt_td = &bbt_mlc_main_descr;
+				this->bbt_md = &bbt_mlc_mirror_descr;
+			}
+			if (!this->badblock_pattern) {
+				// 2K & 4K MLC NAND use same pattern
+				this->badblock_pattern = &mlc_flashbased;
+			}
 		}
 	} else {
+		/* MLC memory based not supported */
 		this->bbt_td = NULL;
 		this->bbt_md = NULL;
 		if (!this->badblock_pattern) {
@@ -1671,9 +1800,22 @@ int brcmnand_default_bbt (struct mtd_info *mtd)
 	}
 	this->isbad_bbt = brcmnand_isbad_bbt;
 
-	// BBT partition occupies 1 MB at the end of the useable flash, so adjust maxblocks accordingly.
-	this->bbt_td->maxblocks = this->bbt_md->maxblocks = (1<<20) / this->blockSize;
+	/*
+	 * BBT partition occupies 1 MB at the end of the useable flash, so adjust maxblocks accordingly.
+	 * Only applies to flash with 512MB or less, since we don't have the extra reserved space at the
+	 * end of the flash (1FF0_0000 - 1FFF_FFFF).
+	 */
+	if (device_size(mtd) <= ( 512ULL << 20))
+		this->bbt_td->maxblocks = this->bbt_md->maxblocks = (1<<20) / this->blockSize;
 
+	/*
+	 * THT: 8/18/08: For MLC flashes with block size of 512KB, allocate 8 blocks or 4MB,
+	 * (this is possible because this region is outside of the CFE allocated space of 1MB at 1FF0_0000).
+	 */
+	else {
+		this->bbt_td->maxblocks = this->bbt_md->maxblocks = 
+			max(this->bbt_td->maxblocks, (int)((4<<20) / this->blockSize));
+	}
 PRINTK("%s: gClearBBT = %d\n", __FUNCTION__, gClearBBT);
 	if (gClearBBT) {
 		(void) brcmnand_preprocessKernelArg(mtd);

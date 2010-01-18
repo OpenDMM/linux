@@ -33,6 +33,7 @@
 #define BARRIER __asm__ __volatile__(".set noreorder\n\t" \
 				     "nop; nop; nop; nop; nop; nop;\n\t" \
 				     ".set reorder\n\t")
+
 /* Atomicity and interruptability */
 #ifdef CONFIG_MIPS_MT_SMTC
 
@@ -40,14 +41,14 @@
 #include <asm/mipsmtregs.h>
 
 #define ENTER_CRITICAL(flags) \
-        { \
-        unsigned int mvpflags; \
-        local_irq_save(flags);\
-        mvpflags = dvpe()
+	{ \
+	unsigned int mvpflags; \
+	local_irq_save(flags);\
+	mvpflags = dvpe()
 #define EXIT_CRITICAL(flags) \
-        evpe(mvpflags); \
-        local_irq_restore(flags); \
-        }
+	evpe(mvpflags); \
+	local_irq_restore(flags); \
+	}
 #else
 
 #define ENTER_CRITICAL(flags) local_irq_save(flags)
@@ -55,7 +56,6 @@
 
 #endif /* CONFIG_MIPS_MT_SMTC */
 
-extern int bcm7118_boardtype;
 extern void build_tlb_refill_handler(void);
 
 #ifdef DPRINTK
@@ -160,14 +160,16 @@ static inline void brcm_setup_wired_discontig(void)
 	if ((bcm_pmemmap->tlb_mask & PM_64M) == PM_64M) {
 		write_c0_pagemask(PM_64M);	/* each entry has 2x 64MB mappings */
 
+#ifdef WIRED_PCI_MAPPING
 		WR_TLB(PCI_MEM_WIN_BASE,
-			CPU2PCI_CPU_PHYS_MEM_WIN_BASE,
-			CPU2PCI_CPU_PHYS_MEM_WIN_BASE + OFFSET_64MBYTES,
+			PCI_MEM_START,
+			PCI_MEM_START + OFFSET_64MBYTES,
 			ATTR_UNCACHED);
 		WR_TLB(PCI_MEM_WIN_BASE + OFFSET_128MBYTES,
-			CPU2PCI_CPU_PHYS_MEM_WIN_BASE + OFFSET_128MBYTES,
-			CPU2PCI_CPU_PHYS_MEM_WIN_BASE + OFFSET_128MBYTES + OFFSET_64MBYTES,
+			PCI_MEM_START + OFFSET_128MBYTES,
+			PCI_MEM_START + OFFSET_128MBYTES + OFFSET_64MBYTES,
 			ATTR_UNCACHED);
+#endif
 		WR_TLB(UPPER_RAM_VBASE,
 			UPPER_RAM_BASE,
 			UPPER_RAM_BASE + OFFSET_64MBYTES,
@@ -182,16 +184,18 @@ static inline void brcm_setup_wired_discontig(void)
 		
 		write_c0_pagemask(PM_16M);	/* each entry has 2x 64MB mappings */
 
+#ifdef WIRED_PCI_MAPPING
 		/* Allocate 256MB PCI address space */
 		for (va = bcm_pmemmap->pci_vAddr,
-				pa0 = CPU2PCI_CPU_PHYS_MEM_WIN_BASE,
-				pa1 = CPU2PCI_CPU_PHYS_MEM_WIN_BASE + OFFSET_16MBYTES;
+				pa0 = PCI_MEM_START,
+				pa1 = PCI_MEM_START + OFFSET_16MBYTES;
 			va < (bcm_pmemmap->pci_vAddr + bcm_pmemmap->pci_winSize);
 			va += OFFSET_32MBYTES, pa0 += OFFSET_32MBYTES, pa1 += OFFSET_32MBYTES
 			) 
 		{
 			WR_TLB(va, pa0, pa1, ATTR_UNCACHED);
 		}
+#endif
 
 		/* Map VA to PA, PA and size given by bcm_pdiscontig_memmap */
 		for (va = bcm_pmemmap->mem_vAddr[1],
@@ -210,6 +214,7 @@ static inline void brcm_setup_wired_discontig(void)
 		BUG();
 	}
 
+	/* 8MB of mappings (PCI, but no PCIe) */
 	write_c0_pagemask(PM_4M);
 	WR_TLB(PCI_IO_WIN_BASE,
 		PCI_IO_WIN_BASE,
@@ -242,12 +247,13 @@ static inline void brcm_setup_wired_64(void)
 	/* Save old context and create impossible VPN2 value */
 	old_ctx = (read_c0_entryhi() & 0xff);
 	hi = (PCI_MEM_WIN_BASE&0xffffe000);
-	lo0 = (((CPU2PCI_CPU_PHYS_MEM_WIN_BASE>>(4+2))&0x3fffffc0)|0x17);
-	lo1 = ((((CPU2PCI_CPU_PHYS_MEM_WIN_BASE+OFFSET_64MBYTES)>>(4+2))&0x3fffffc0)|0x17);
+	lo0 = (((PCI_MEM_START>>(4+2))&0x3fffffc0)|0x17);
+	lo1 = ((((PCI_MEM_START+OFFSET_64MBYTES)>>(4+2))&0x3fffffc0)|0x17);
 
 	// Save the start entry presumably starting at 0, but we never know
 	entry = wired = read_c0_wired();
 
+#ifdef WIRED_PCI_MAPPING
 //printk("Write first entry: hi=%08x, lo0=%08x, lo1=%08x, wired=%d\n", hi, lo0, lo1, entry);
 	/* Blast 'em all away. */
 	do {
@@ -268,16 +274,17 @@ static inline void brcm_setup_wired_64(void)
 		lo1 += TLBLO_OFFSET_128MBYTES;
 		entry++;
 	} while(hi < PCI_IO_WIN_BASE);
+#endif
 
 //printk("Write end of first entry: hi=%08x, lo0=%08x, lo1=%08x, wired=%d\n", hi, lo0, lo1, entry);
 
-	/* Now write the entry for the IO space between 0xf000_0000 and 0xf060_000b */
-	write_c0_pagemask(PM_4M); /* 4MBx2 should cover it. */
+	/* PCI/PCIe I/O - f000_0000 - f1ff_ffff */
+	write_c0_pagemask(PM_16M);
 	/* Adjust to 8MB offset */
-	hi = (PCI_IO_WIN_BASE&0xffffe000);
-	/* IO space starts at 0xf000_0000 and is mapped to same value */
+	hi = PCI_IO_WIN_BASE;
+	/* IO space starts at 0xf000_0000; VA = PA */
 	lo0 = (((PCI_IO_WIN_BASE>>(4+2))&0x3fffffc0)|0x17);
-	lo1 = ((((PCI_IO_WIN_BASE+OFFSET_4MBYTES)>>(4+2))&0x3fffffc0)|0x17);
+	lo1 = ((((PCI_IO_WIN_BASE+OFFSET_16MBYTES)>>(4+2))&0x3fffffc0)|0x17);
 
 	//printk("Write 2nd entry: hi=%08x, lo0=%08x, lo1=%08x, wired=%d\n", hi, lo0, lo1, entry);
 	do {
@@ -293,9 +300,9 @@ static inline void brcm_setup_wired_64(void)
 		BARRIER;
 		tlb_write_indexed();
 		BARRIER;
-		hi += OFFSET_8MBYTES;
-		lo0 += TLBLO_OFFSET_8MBYTES;
-		lo1 += TLBLO_OFFSET_8MBYTES;
+		hi += OFFSET_32MBYTES;
+		lo0 += TLBLO_OFFSET_32MBYTES;
+		lo1 += TLBLO_OFFSET_32MBYTES;
 		entry++;
 	} while(0);
 
@@ -346,6 +353,7 @@ static inline void brcm_setup_wired_16(void)
 	lo0 = (((PCI_MEM_WIN_BASE>>(4+2))&0x3fffffc0)|0x17);
 	lo1 = ((((PCI_MEM_WIN_BASE+OFFSET_16MBYTES)>>(4+2))&0x3fffffc0)|0x17);
 
+#ifdef WIRED_PCI_MAPPING
 	/* Blast 'em all away. */
 	while (entry < (PCI_MEM_TLB_ENTRIES+wired)) {
 		/*
@@ -365,6 +373,7 @@ static inline void brcm_setup_wired_16(void)
 		lo1 += TLBLO_OFFSET_32MBYTES;
 		entry++;
 	}
+#endif
 
 	/* write entry for PCI I/O */
 	hi = (PCI_IO_WIN_BASE&0xffffe000);
@@ -388,11 +397,8 @@ static inline void brcm_setup_wired_16(void)
 
 	BARRIER;
 	write_c0_entryhi(old_ctx);
-	// THT: Write it the wired entries here, before releasing the lock
-#if defined (CONFIG_MIPS_BCM7403)
-	write_c0_random(0x0000001F);
-#endif
 
+	// THT: Write it the wired entries here, before releasing the lock
 	write_c0_wired(entry);
 
 	write_c0_pagemask(PM_4K);
@@ -420,33 +426,20 @@ static void brcm_setup_wired_entries(void)
 #endif
 }
 
-
 #define PCI_SATA_MEM_ENABLE			1
 #define PCI_SATA_BUS_MASTER_ENABLE		2
 #define PCI_SATA_PERR_ENABLE			0x10
 #define PCI_SATA_SERR_ENABLE			0x20
-#define CPU2PCI_PCI_SATA_PHYS_MEM_WIN0_BASE	0x10510000
-
-#define EXT_PCI_CONFIG_IDX			0xf0600004
-#define EXT_PCI_CONFIG_DATA			0xf0600008
-
-#if defined(CONFIG_SATA_SVW) || defined(CONFIG_SATA_SVW_MODULE)
-#define	HAS_SATA_SVW	
-#endif
 
 static void brcm_setup_sata_bridge(void)
 {
-
-//#if defined(BCHP_PCI_BRIDGE_PCI_CTRL) && defined(CONFIG_SATA_SVW)
-#if defined(BCHP_PCI_BRIDGE_PCI_CTRL) && defined(HAS_SATA_SVW)
-	/* Internal PCI SATA bridge setup for 7038, 7401, 7403, 7118, etc. */
-
-#ifdef CONFIG_MIPS_BCM7118
-	/* no SATA on 7118RNG */
-	if(bcm7118_boardtype == 1)
+#if ! defined(CONFIG_BRCM_COMMON_PCI)
+	/* For COMMON_PCI platforms, this moves into pci-brcmstb.c */
+	if(brcm_sata_enabled == 0)
 		return;
-#endif
 
+#if defined(BCHP_PCI_BRIDGE_PCI_CTRL) && defined(BRCM_SATA_SUPPORTED)
+	/* Internal PCI SATA bridge setup for 7038, 7401, 7403, 7118, etc. */
 	BDEV_SET(BCHP_PCI_BRIDGE_PCI_CTRL,
 		(PCI_SATA_MEM_ENABLE|PCI_SATA_BUS_MASTER_ENABLE|
 		 PCI_SATA_PERR_ENABLE|PCI_SATA_SERR_ENABLE));
@@ -457,7 +450,7 @@ static void brcm_setup_sata_bridge(void)
 
 	/* PCI master window (MIPS access to SATA BARs) */
 	BDEV_WR(BCHP_PCI_BRIDGE_CPU_TO_SATA_MEM_WIN_BASE,
-		CPU2PCI_PCI_SATA_PHYS_MEM_WIN0_BASE |
+		PCI_SATA_MEM_START |
 		CPU2PCI_CPU_PHYS_MEM_WIN_BYTE_ALIGN);
 
 	BDEV_WR(BCHP_PCI_BRIDGE_CPU_TO_SATA_IO_WIN_BASE,
@@ -468,8 +461,7 @@ static void brcm_setup_sata_bridge(void)
 	if(BDEV_RD(BCHP_PCI_BRIDGE_SATA_CFG_DATA) == 0xffffffff)
 		printk(KERN_WARNING "Internal SATA is not responding\n");
 
-//#elif defined(BCHP_PCIX_BRIDGE_PCIX_CTRL) && defined(CONFIG_SATA_SVW)
-#elif defined(BCHP_PCIX_BRIDGE_PCIX_CTRL) && defined(HAS_SATA_SVW)
+#elif defined(BCHP_PCIX_BRIDGE_PCIX_CTRL) && defined(BRCM_SATA_SUPPORTED)
 
 	/* Internal PCI-X SATA bridge setup for 7400, 7405, 7335 */
 
@@ -484,7 +476,7 @@ static void brcm_setup_sata_bridge(void)
 
 	/* PCI master window (MIPS access to SATA BARs) */
 	BDEV_WR(BCHP_PCIX_BRIDGE_CPU_TO_SATA_MEM_WIN_BASE,
-		CPU2PCI_PCI_SATA_PHYS_MEM_WIN0_BASE |
+		PCI_SATA_MEM_START |
 		CPU2PCI_CPU_PHYS_MEM_WIN_BYTE_ALIGN);
 	BDEV_WR(BCHP_PCIX_BRIDGE_CPU_TO_SATA_IO_WIN_BASE,
 		CPU2PCI_CPU_PHYS_MEM_WIN_BYTE_ALIGN);
@@ -494,10 +486,13 @@ static void brcm_setup_sata_bridge(void)
 	if(BDEV_RD(BCHP_PCIX_BRIDGE_SATA_CFG_DATA) == 0xffffffff)
 		printk(KERN_WARNING "Internal SATA is not responding\n");
 #endif
+#endif
 }
 
 static void brcm_setup_pci_bridge(void)
 {
+#if ! defined(CONFIG_BRCM_COMMON_PCI)
+	/* For COMMON_PCI platforms, this moves into pci-brcmstb.c */
 #if defined(BCHP_PCI_CFG_STATUS_COMMAND) && ! defined(CONFIG_BRCM_PCI_SLAVE)
 
 	/* External PCI bridge setup (most chips) */
@@ -505,14 +500,10 @@ static void brcm_setup_pci_bridge(void)
 	BDEV_SET(BCHP_PCI_CFG_STATUS_COMMAND,
 		PCI_BUS_MASTER|PCI_IO_ENABLE|PCI_MEM_ENABLE);
 
-	BDEV_WR(BCHP_PCI_CFG_CPU_2_PCI_MEM_WIN0,
-		CPU2PCI_PCI_PHYS_MEM_WIN0_BASE);
-	BDEV_WR(BCHP_PCI_CFG_CPU_2_PCI_MEM_WIN1,
-		CPU2PCI_PCI_PHYS_MEM_WIN1_BASE);
-	BDEV_WR(BCHP_PCI_CFG_CPU_2_PCI_MEM_WIN2,
-		CPU2PCI_PCI_PHYS_MEM_WIN2_BASE);
-	BDEV_WR(BCHP_PCI_CFG_CPU_2_PCI_MEM_WIN3,
-		CPU2PCI_PCI_PHYS_MEM_WIN3_BASE);
+	BDEV_WR(BCHP_PCI_CFG_CPU_2_PCI_MEM_WIN0, PCI_MEM_START);
+	BDEV_WR(BCHP_PCI_CFG_CPU_2_PCI_MEM_WIN1, PCI_MEM_START + 0x08000000);
+	BDEV_WR(BCHP_PCI_CFG_CPU_2_PCI_MEM_WIN2, PCI_MEM_START + 0x10000000);
+	BDEV_WR(BCHP_PCI_CFG_CPU_2_PCI_MEM_WIN3, PCI_MEM_START + 0x18000000);
 
 	BDEV_WR(BCHP_PCI_CFG_CPU_2_PCI_IO_WIN0,
 		0x00000000 | CPU2PCI_CPU_PHYS_MEM_WIN_BYTE_ALIGN);
@@ -534,8 +525,9 @@ static void brcm_setup_pci_bridge(void)
 #endif
 
 	/* do a PCI config read */
-	DEV_WR(EXT_PCI_CONFIG_IDX, PCI_DEV_NUM_EXT);
-	DEV_RD(EXT_PCI_CONFIG_DATA);
+	DEV_WR(MIPS_PCI_XCFG_INDEX, PCI_DEV_NUM_EXT);
+	DEV_RD(MIPS_PCI_XCFG_DATA);
+#endif
 #endif
 }
 
@@ -852,9 +844,6 @@ void __init add_wired_entry(unsigned long entrylo0, unsigned long entrylo1,
 	old_ctx = read_c0_entryhi();
 	old_pagemask = read_c0_pagemask();
 	wired = read_c0_wired();
-#if defined (CONFIG_MIPS_BCM7403)
-	write_c0_random(0x0000001F);
-#endif
 	write_c0_wired(wired + 1);
 	write_c0_index(wired);
 	BARRIER;
@@ -958,7 +947,8 @@ __setup("ntlb=", set_ntlb);
 #ifdef CONFIG_MIPS_BRCM97XXX
 
 static bcm_memmap_t bcm_standard_memmap = {
-#if defined(CONFIG_MIPS_BCM7325) || defined(CONFIG_BMIPS4380)
+#if defined(CONFIG_MTI_R34K) || defined(CONFIG_BMIPS4380) || \
+	defined(CONFIG_BMIPS5000)
 		// || def(7440b0) but 7440b0 defines its own bcm_memmap
 	.tlb_mask =		PM_64M,
 #else
@@ -993,9 +983,6 @@ void __init tlb_init(void)
 	 */
 	probe_tlb(config);
 	write_c0_pagemask(PM_DEFAULT_MASK);
-#if defined (CONFIG_MIPS_BCM7403)
-	write_c0_random(0x0000001F);
-#endif
 	write_c0_wired(0);
 	write_c0_framemask(0);
 	temp_tlb_entry = current_cpu_data.tlbsize - 1;

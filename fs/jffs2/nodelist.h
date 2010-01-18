@@ -263,7 +263,11 @@ struct jffs2_eraseblock
 
 static inline int jffs2_blocks_use_vmalloc(struct jffs2_sb_info *c)
 {
-	return ((c->flash_size / c->sector_size) * sizeof (struct jffs2_eraseblock)) > (128 * 1024);
+	uint64_t tmpdiv;
+	tmpdiv = c->flash_size;
+	do_div(tmpdiv, c->sector_size);
+
+	return ((tmpdiv * sizeof(struct jffs2_eraseblock)) > (uint64_t) (128*1024));
 }
 
 #define ref_totlen(a, b, c) __jffs2_ref_totlen((a), (b), (c))

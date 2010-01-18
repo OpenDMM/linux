@@ -250,10 +250,6 @@ static void fixup_use_erase_chip(struct mtd_info *mtd, void *param)
 {
 	struct map_info *map = mtd->priv;
 	struct cfi_private *cfi = map->fldrv_priv;
-	
-	printk(KERN_NOTICE "fixup_use_erase_chip\n");
-	
-	
 	if ((cfi->cfiq->NumEraseRegions == 1) &&
 		((cfi->cfiq->EraseRegionInfo[0] & 0xffff) == 0)) {
 		mtd->erase = cfi_amdstd_erase_chip;
@@ -444,8 +440,11 @@ static struct mtd_info *cfi_amdstd_setup(struct mtd_info *mtd)
 	printk(KERN_NOTICE "number of %s chips: %d\n",
 	       (cfi->cfi_mode == CFI_MODE_CFI)?"CFI":"JEDEC",cfi->numchips);
 	/* Select the correct geometry setup */
-	mtd->size = devsize * cfi->numchips;
-
+	if ((uint64_t) devsize * cfi->numchips >= MTD_MAX_32BIT) {
+		mtd->size = 0;
+	} else {
+		mtd->size = devsize * cfi->numchips;
+	}
 	mtd->numeraseregions = cfi->cfiq->NumEraseRegions * cfi->numchips;
 	mtd->eraseregions = kmalloc(sizeof(struct mtd_erase_region_info)
 				    * mtd->numeraseregions, GFP_KERNEL);
@@ -456,12 +455,16 @@ static struct mtd_info *cfi_amdstd_setup(struct mtd_info *mtd)
 
 	for (i=0; i<cfi->cfiq->NumEraseRegions; i++) {
 		unsigned long ernum, ersize;
+		uint64_t tmpdiv;
 		ersize = ((cfi->cfiq->EraseRegionInfo[i] >> 8) & ~0xff) * cfi->interleave;
 		ernum = (cfi->cfiq->EraseRegionInfo[i] & 0xffff) + 1;
 
 		if (mtd->erasesize < ersize) {
 			mtd->erasesize = ersize;
 		}
+		tmpdiv = (uint64_t) devsize * cfi->numchips;
+		do_div(tmpdiv, mtd->erasesize);
+		mtd->num_eraseblocks = tmpdiv;
 		for (j=0; j<cfi->numchips; j++) {
 			mtd->eraseregions[(j*cfi->cfiq->NumEraseRegions)+i].offset = (j*devsize)+offset;
 			mtd->eraseregions[(j*cfi->cfiq->NumEraseRegions)+i].erasesize = ersize;
@@ -1699,7 +1702,7 @@ static int cfi_amdstd_erase_chip(struct mtd_info *mtd, struct erase_info *instr)
 	if (instr->addr != 0)
 		return -EINVAL;
 
-	if (instr->len != mtd->size)
+	if (instr->len != device_size(mtd))
 		return -EINVAL;
 
 	ret = do_erase_chip(map, &cfi->chips[0]);

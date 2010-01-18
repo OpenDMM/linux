@@ -38,10 +38,13 @@ struct mtd_info *mtd_do_chip_probe(struct map_info *map, struct chip_probe *cp)
 		mtd = check_cmd_set(map, 0); /* Then the secondary */
 
 	if (mtd) {
-		if (mtd->size > map->size) {
+		if (device_size(mtd) > map->size) {
 			printk(KERN_WARNING "Reducing visibility of %ldKiB chip to %ldKiB\n",
-			       (unsigned long)mtd->size >> 10, 
+			       (unsigned long)device_size(mtd) >> 10, 
 			       (unsigned long)map->size >> 10);
+			mtd->num_eraseblocks = map->size / mtd->erasesize;
+			/* Since map->size is of type unsigned long, the size has to be
+			   < 4GB, therefore assign mtd->size */
 			mtd->size = map->size;
 		}
 		return mtd;
