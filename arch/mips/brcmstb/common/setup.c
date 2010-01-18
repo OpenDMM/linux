@@ -108,13 +108,13 @@ static void brcm_machine_restart(char *command)
 
 static void brcm_machine_halt(void)
 {
-	printk("Broadcom eval board halted.\n");
+	printk("Halted.\n");
 	while (1);
 }
 
 static void brcm_machine_power_off(void)
 {
-	printk("Broadcom eval board halted. Please turn off power.\n");
+	printk("Halted. Please turn off power.\n");
 	while (1);
 }
 
