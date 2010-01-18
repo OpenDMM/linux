@@ -73,7 +73,7 @@
 #ifdef CONFIG_MIPS_BCM97456D0
 #define PCI_DEVICE_ID_3255      0x07
 #endif
-#define PCI_DEVICE_ID_EXT       0x0d
+#define PCI_DEVICE_ID_EXT       1
 #define PCI_DEVICE_ID_1394      0x0e
 #define PCI_DEVICE_ID_MINI      0x04
 #define PCI_DEVICE_ID_SATA      0 /* On 2ndary PCI bus */
