@@ -513,7 +513,18 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.timing2 = 0,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_3_0, 
 	},
-		
+
+	{	/* 31 */
+		.chipId = HYNIX_HY27US08121A,
+		.mafId = FLASHTYPE_HYNIX,
+		.chipIdStr = "Hynix HY27US08121A (dream)",
+		.options = NAND_USE_FLASH_BBT,
+		.idOptions = 0,
+		.timing1 = 0, 
+		.timing2 = 0,
+		.ctrlVersion = 0,
+	},
+
 	{	/* LAST DUMMY ENTRY */
 		.chipId = 0,
 		.mafId = 0,
@@ -7247,6 +7258,7 @@ brcmnand_validate_cs(struct mtd_info *mtd )
 static unsigned int 
 get_rom_size(unsigned long* outp_cs0Base)
 {
+#if 0
 	volatile unsigned long strap_ebi_rom_size, sun_top_ctrl_strap_value;
 	uint32_t romSize = 0;
 
@@ -7294,6 +7306,9 @@ get_rom_size(unsigned long* outp_cs0Base)
 		BUG();
 	}
 	return romSize;
+#else
+	return 64<<20;
+#endif
 }
 
 
@@ -7638,9 +7653,18 @@ PRINTK("brcmnand_scan: Done brcmnand_probe\n");
 			chip->pbase = 0x12000000;
 			mtd->size = 0x20000000 - chip->pbase; // THT: This is different than chip->chipSize
 		} else {
+#if CONFIG_MIPS_BCM7401CX
+			/* We know that flash endAddr is 0x2000_0000 */
+			chip->pbase = 0x18000000 - chip->chipSize;
+			mtd->size = chip->chipSize;
+#else
+#if !CONFIG_MIPS_BCM7405BX
+			printk("nand flash chip base not configured for this chip yet!!! fallback to 0x20000000\n");
+#endif
 			/* We know that flash endAddr is 0x2000_0000 */
 			chip->pbase = 0x20000000 - chip->chipSize;
 			mtd->size = chip->chipSize;
+#endif
 		}
 
 		printk("Found NAND chip on Chip Select %d, chipSize=%dMB, usable size=%dMB, base=%08x\n", 
