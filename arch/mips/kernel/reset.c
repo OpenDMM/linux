@@ -24,6 +24,8 @@ void (*_machine_halt)(void);
 void (*pm_power_off)(void);
 
 EXPORT_SYMBOL(pm_power_off);
+EXPORT_SYMBOL(_machine_restart);
+EXPORT_SYMBOL(_machine_halt);
 
 void machine_restart(char *command)
 {
