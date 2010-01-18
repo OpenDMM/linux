@@ -35,6 +35,10 @@
 #include <asm/brcmstb/brcm97440b0/bchp_ebi.h>  // For CS registers
 #endif
 
+#ifdef CONFIG_MIPS_BCM7601B0
+#include <asm/brcmstb/brcm97601b0/bchp_ebi.h>  // For CS registers
+#endif
+
 /*
  * Conversion between Kernel Kconfig and Controller version number
  */
@@ -50,13 +54,16 @@
 
 /* Supporting MLC NAND */
 #define CONFIG_MTD_BRCMNAND_VERS_3_0		6
-#define CONFIG_MTD_BRCMNAND_VERS_3_1		7
+#define CONFIG_MTD_BRCMNAND_VERS_3_1_0		7	/* RDB reads as 3.0 */
+#define CONFIG_MTD_BRCMNAND_VERS_3_1_1		8	/* RDB reads as 3.0 */
+#define CONFIG_MTD_BRCMNAND_VERS_3_2		9	
+#define CONFIG_MTD_BRCMNAND_VERS_3_3		10	
 
 #define BRCMNAND_VERSION(major, minor)	((major<<8) | minor)
 
 
 #if CONFIG_MTD_BRCMNAND_VERSION >= CONFIG_MTD_BRCMNAND_VERS_1_0
-#define MAX_NAND_CS	8
+#define MAX_NAND_CS	8 // Upper limit, actual limit varies depending on platfrom
 
 #else
 #define MAX_NAND_CS	1
@@ -117,6 +124,7 @@
 
 /*--------- Chip ID decoding for Samsung MLC NAND flashes -----------------------*/
 #define SAMSUNG_K9LBG08U0M	0xD7
+#define SAMSUNG_K9GA08U0D		0xD5
 
 #define SAMSUNG_3RDID_INT_CHIPNO_MASK	NAND_CI_CHIPNR_MSK
 
@@ -154,6 +162,26 @@
 #define SAMSUNG_4THID_OOBSIZE_MASK	0x04
 #define SAMSUNG_4THID_OOBSIZE_8B		0x00
 #define SAMSUNG_4THID_OOBSIZE_16B	0x04
+
+#define SAMSUNG2_4THID_PAGESIZE_MASK	0x03
+#define SAMSUNG2_4THID_PAGESIZE_2KB	0x00
+#define SAMSUNG2_4THID_PAGESIZE_4KB	0x01
+#define SAMSUNG2_4THID_PAGESIZE_8KB	0x02
+#define SAMSUNG2_4THID_PAGESIZE_RSV	0x03
+
+#define SAMSUNG2_4THID_BLKSIZE_MASK		0xB0
+#define SAMSUNG2_4THID_PAGESIZE_128KB	0x00
+#define SAMSUNG2_4THID_PAGESIZE_256KB	0x10
+#define SAMSUNG2_4THID_PAGESIZE_512KB	0x20
+#define SAMSUNG2_4THID_PAGESIZE_1MB		0x30
+#define SAMSUNG2_4THID_PAGESIZE_RSVD1	0x80
+#define SAMSUNG2_4THID_PAGESIZE_RSVD2	0x90
+#define SAMSUNG2_4THID_PAGESIZE_RSVD3	0xA0
+#define SAMSUNG2_4THID_PAGESIZE_RSVD4	0xB0
+
+#define SAMSUNG2_4THID_OOBSIZE_MASK	0x4c
+#define SAMSUNG2_4THID_OOBSIZE_PERPAGE_128	0x04
+#define SAMSUNG2_4THID_OOBSIZE_PERPAGE_218	0x08
 
 #define SAMSUNG_5THID_NRPLANE_MASK	0x0C
 #define SAMSUNG_5THID_NRPLANE_1		0x00
@@ -390,7 +418,7 @@ struct brcmnand_chip {
 
 	uint32_t (*ctrl_read) (uint32_t command);
 	void (*ctrl_write) (uint32_t command, uint32_t val);
-	void (*ctrl_writeAddr)(struct brcmnand_chip* chip, loff_t addr, int cmdEndAddr);
+	uint32_t (*ctrl_writeAddr)(struct brcmnand_chip* chip, loff_t addr, int cmdEndAddr);
 
 	/*
 	 * THT: Private methods exported to BBT, equivalent to the methods defined in struct ecc_nand_ctl
@@ -464,14 +492,14 @@ struct brcmnand_chip {
 
 	// THT Used in lieu of struct nand_ecc_ctrl ecc;
 	brcmnand_ecc_level_t ecclevel;	// ECC scheme
-	int			ecctotal; // total number of ECC bytes, 3 for Small pages, 12 for large pages.
+	int			ecctotal; // total number of ECC bytes per page, 3 for Small pages, 12 for large pages.
 	int			eccsize; // Size of the ECC block, always 512 for Brcm Nand Controller
-	int			eccbytes; // How many bytes are used for ECC per eccsize (3 for Brcm Nand Controller)
-	int			eccsteps; // How many ECC block per page (4 for 2K page, 1 for 512B page
-	int			eccOobSize; // # of oob byte per ECC steps, always 16
+	int			eccbytes; // How many bytes are used for ECC per eccsize (3 for Hamming)
+	int			eccsteps; // How many ECC block per page (4 for 2K page, 1 for 512B page, 8 for 4K page etc...
+	int			eccOobSize; // # of oob byte per ECC step, mostly 16, 27 for BCH-8
 	
 	struct nand_buffers* buffers; // THT 2.6.18-5.3: Changed to pointer to accomodate EDU
-#define BRCMNAND_OOBBUF(buffers) (&buffers->databuf[NAND_MAX_PAGESIZE])
+#define BRCMNAND_OOBBUF(pbuf) (&((pbuf)->databuf[NAND_MAX_PAGESIZE]))
 	//struct nand_hw_control hwcontrol;
 
 	struct mtd_oob_ops ops;

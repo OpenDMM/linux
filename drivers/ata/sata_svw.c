@@ -369,7 +369,13 @@ static void brcm_SetPllTxRxCtrl(void __iomem *mmio_base, int port)
 {
 	uint16_t tmp16;
 	//Lower BW
+#ifdef BRCM_75MHZ_SATA_PLL
+	/* use 75Mhz PLL clock */
+	mdio_write_reg(mmio_base, port, 0, 0x2004);
+#else
+	/* use 100Mhz PLL clock */
 	mdio_write_reg(mmio_base, port, 0, 0x1404);
+#endif
 
 	//Change Tx control
 	mdio_write_reg(mmio_base, port, 0xa, 0x0260);
@@ -448,8 +454,8 @@ static void brcm_InitSata_1_5Gb(void __iomem *mmio_base, int port)
 
 #ifdef	AUTO_NEG_SPEED
 	// disable 3G feature
-	tmp32 = readl((void *)(MMIO_OFS + 0xf0 + port * 0x100));
-	writel(tmp32 & 0xfffffbff, (void *)(MMIO_OFS + 0xf0 + port * 0x100));
+	tmp32 = readl(port_mmio + K2_SATA_F0_OFFSET);
+	writel(tmp32 & 0xfffffbff, port_mmio + K2_SATA_F0_OFFSET);
 	udelay(10000);
 #endif
 
@@ -793,7 +799,7 @@ static void k2_sata_tf_load(struct ata_port *ap, const struct ata_taskfile *tf)
 		if (tf->ctl & ATA_NIEN) {
 			void __iomem *port_mmio = PORT_MMIO(ap);
 			u32 simr = readl(port_mmio + K2_SATA_SIMR_OFFSET);
-#if defined (CONFIG_MIPS_BCM7440)
+#if defined (CONFIG_MIPS_BCM7440) || defined (CONFIG_MIPS_BCM7601)
 			mask = 0xa0000000;
 #else
 			mask = 0x80000000;
@@ -828,6 +834,57 @@ static void k2_sata_tf_load(struct ata_port *ap, const struct ata_taskfile *tf)
 	ata_wait_idle(ap);
 }
 
+#if	defined(CONFIG_MIPS_BCM7420A0)
+static void k2_sata_mmio_data_xfer(struct ata_device *adev, unsigned char *buf,
+                        unsigned int buflen, int write_data)
+{
+        struct ata_port *ap = adev->link->ap;
+        unsigned int i;
+        unsigned int words = buflen >> 1;
+        u16 *buf16 = (u16 *) buf;
+        void __iomem *mmio = (void __iomem *)ap->ioaddr.data_addr;
+	u32 extra_short = 0xffffffff;
+
+        /* Transfer multiple of 2 bytes */
+        if (write_data) {
+                for (i = 0; i < words; i++)
+                        writew(le16_to_cpu(buf16[i]), mmio);
+        } else {
+                for (i = 0; i < words; i++)
+		{
+			u32 tmp;
+
+			if(extra_short == 0xffffffff) {
+				/* each readl gives us the next 2 readw's */
+				tmp = readl(mmio);
+				extra_short = tmp >> 16;
+			} else {
+				tmp = extra_short;
+				extra_short = 0xffffffff;
+			}
+
+			buf16[i] = cpu_to_le16(tmp & 0xFFFF);
+		}
+        }
+
+        /* Transfer trailing 1 byte, if any. */
+        if (unlikely(buflen & 0x01)) {
+                u16 align_buf[1] = { 0 };
+                unsigned char *trailing_buf = buf + buflen - 1;
+
+                if (write_data) {
+                        memcpy(align_buf, trailing_buf, 1);
+                        writew(le16_to_cpu(align_buf[0]), mmio);
+                } else {
+			if(extra_short == 0xffffffff)
+				extra_short = readl(mmio);
+                        align_buf[0] = cpu_to_le16(extra_short & 0xFFFF);
+                        memcpy(trailing_buf, align_buf, 1);
+                }
+        }
+}
+#endif
+ 
 /**
  *	k2_bmdma_setup_mmio - Set up PCI IDE BMDMA transaction (MMIO)
  *	@qc: Info associated with this ATA transaction.
@@ -1832,14 +1889,6 @@ static int k2_power_on(void *arg)
 	return(0);
 }
 
-static int k2_sata_hp_poll(struct ata_port *ap)
-{
-	/* don't check for hotplug events while the HW is sleeping */
-	if(SLEEP_FLAG(ap->host) == K2_SLEEPING)
-		return(0);
-	return(sata_std_hp_poll(ap));
-}
-
 static void k2_sata_remove_one(struct pci_dev *pdev)
 {
 	struct device *dev = pci_dev_to_dev(pdev);
@@ -1852,6 +1901,110 @@ static void k2_sata_remove_one(struct pci_dev *pdev)
 }
 
 #endif /* CONFIG_BRCM_PM */
+
+#ifdef	CONFIG_SATA_SVW_PMP_HOTPLUG
+static int k2_pmp_hp_poll(struct ata_port *ap)
+{
+	unsigned long state = (unsigned long)ap->hp_poll_data;
+	struct ata_link *link = &ap->link;
+	u32 serror = 0;
+	int rc = 0;
+	struct ata_device *dev = ap->link.device;
+	u32 link_stat = 0;
+
+#ifdef	CONFIG_BRCM_PM
+	/* don't check for hotplug events while the HW is sleeping */
+	if(SLEEP_FLAG(ap->host) == K2_SLEEPING)
+		return(0);
+#endif /* CONFIG_BRCM_PM */
+
+	if(ap->nr_pmp_links && ap->ops->pmp_read)
+	{
+		u32 perror = 0;
+		rc = ap->ops->pmp_write(dev, SATA_PMP_CTRL_PORT, SATA_PMP_GSCR_ERROR_EN, SERR_PHYRDY_CHG);
+		if (!rc)
+		{
+			rc = ap->ops->pmp_read(dev, SATA_PMP_CTRL_PORT, SATA_PMP_GSCR_ERROR, &serror);
+			if(serror) {
+				link_stat = serror;
+				serror = SERR_PHYRDY_CHG;
+
+				rc = ap->ops->pmp_write(dev, SATA_PMP_CTRL_PORT, SATA_PMP_GSCR_ERROR_EN, SERR_DEV_XCHG);
+				if (!rc)
+				{
+					rc = ap->ops->pmp_read(dev, SATA_PMP_CTRL_PORT, SATA_PMP_GSCR_ERROR, &perror);
+					if(perror) {
+						link_stat |= perror;
+						perror = SERR_DEV_XCHG;
+						serror |= perror;
+					}			
+				}
+			}
+		}
+		else
+		DPRINTK("failed to write reg 33\n");
+	}
+	else
+	return(sata_std_hp_poll(ap));
+
+	serror &= SERR_PHYRDY_CHG | SERR_DEV_XCHG;
+	
+	switch (state) {
+	case 0:
+		if (serror) {
+			unsigned int n=0;
+			struct ata_link *link;
+			if(link_stat)	DPRINTK("state 0, link_stat 0x%08x\n", link_stat);
+
+			ata_port_for_each_link(link, ap)
+			{
+				sata_scr_write(link, SCR_ERROR, 0xffffffff);
+				n++;
+			}
+
+			if((link_stat & 1) || (link_stat & 2))
+			state = 1;
+		}
+		break;
+
+	case 1:
+		if (!serror)
+			rc = 1;
+		else
+		{
+			unsigned int n=0;
+			struct ata_link *link;
+			if(link_stat)	DPRINTK("state 1, link_stat 0x%08x\n", link_stat);
+
+			ata_port_for_each_link(link, ap)
+			{
+				sata_scr_write(link, SCR_ERROR, 0xffffffff);
+				n++;
+			}
+		}
+		break;
+	}
+
+	ap->hp_poll_data = (void *)state;
+
+	if(serror)
+	DPRINTK("EXIT rc %d, ap->hp_poll_data %p, serror 0x%08x\n", rc, ap->hp_poll_data, serror);
+
+	return rc;
+}
+#else	/* !CONFIG_SATA_SVW_PMP_HOTPLUG */
+static int k2_pmp_hp_poll(struct ata_port *ap)
+{
+#ifdef	CONFIG_BRCM_PM
+	/* don't check for hotplug events while the HW is sleeping */
+	if(SLEEP_FLAG(ap->host) == K2_SLEEPING)
+		return(0);
+#endif /* CONFIG_BRCM_PM */
+
+	return(sata_std_hp_poll(ap));
+}
+#endif
+
 
 /*
  * Driver initialization
@@ -1889,11 +2042,7 @@ static const struct ata_port_operations k2_sata_ops = {
 	.check_status		= k2_stat_check_status,
 	.port_disable		= ata_port_disable,
 	.hp_poll_activate	= sata_std_hp_poll_activate,
-#if defined(CONFIG_BRCM_PM)
-	.hp_poll		= k2_sata_hp_poll,
-#else
-	.hp_poll		= sata_std_hp_poll,
-#endif
+	.hp_poll		= k2_pmp_hp_poll,
 	.scr_read		= k2_sata_scr_read,
 	.scr_write		= k2_sata_scr_write,
 
@@ -1927,7 +2076,11 @@ static const struct ata_port_operations k2_sata_ops = {
 	.bmdma_status		= ata_bmdma_status,
 	.tf_load		= k2_sata_tf_load,
 	.exec_command		= ata_exec_command,
+#if	defined(CONFIG_MIPS_BCM7420A0)
+	.data_xfer		= k2_sata_mmio_data_xfer,
+#else
 	.data_xfer		= ata_mmio_data_xfer,
+#endif
 	.host_stop		= ata_pci_host_stop,
 
 	.pmp_attach		= k2_sata_pmp_attach,
@@ -2007,7 +2160,7 @@ static int k2_sata_init_one (struct pci_dev *pdev, const struct pci_device_id *e
 	probe_ent->dev = pci_dev_to_dev(pdev);
 	INIT_LIST_HEAD(&probe_ent->node);
 
-#ifdef	CONFIG_MIPS_BCM7440	
+#if defined (CONFIG_MIPS_BCM7440) || defined (CONFIG_MIPS_BCM7601)
 	mmio_base = (void __iomem *)pci_resource_start(pdev, 5);
 #else
 	mmio_base = pci_iomap(pdev, 5, 0);
@@ -2045,8 +2198,12 @@ static int k2_sata_init_one (struct pci_dev *pdev, const struct pci_device_id *e
 
 	probe_ent->port_ops = &k2_sata_ops;
 
-#ifdef CONFIG_MIPS_BRCM97XXX 	// jipeng - FIXME only 2 ports in 7038C0 SATA core
+#ifdef CONFIG_MIPS_BRCM97XXX 	
+#ifdef	CONFIG_SATA_SVW_PORTS
+	probe_ent->n_ports = CONFIG_SATA_SVW_PORTS;
+#else
 	probe_ent->n_ports = 2;
+#endif
 #else
 	probe_ent->n_ports = 4;
 #endif

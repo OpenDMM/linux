@@ -95,6 +95,13 @@ int gBcmSplash = 0;
 #endif
 EXPORT_SYMBOL(gBcmSplash);
 
+/*
+ * Support for CFE defined env vars for NAND flash partition
+ */
+
+cfePartitions_t gCfePartitions;
+EXPORT_SYMBOL(gCfePartitions);
+
 
 /* The Chip Select [0..7] for the NAND chips from gNumNand above, only applicable to v1.0+ NAND controller */
 #define NAND_MAX_CS    8
@@ -140,7 +147,7 @@ unsigned long (* __get_discontig_RAM_size) (void) = __default_get_discontig_RAM_
 EXPORT_SYMBOL(__get_discontig_RAM_size);
 
 #if defined( CONFIG_MIPS_BCM7400 ) || defined( CONFIG_MIPS_BCM7325 ) || \
-	defined( CONFIG_MIPS_BCM7440 )
+	defined( CONFIG_MIPS_BCM7440 ) || defined(CONFIG_MIPS_BCM7601)
 #define CONSOLE_KARGS " console=uart,mmio,0x10400b00,115200n8"
 
 #else
@@ -222,6 +229,7 @@ unsigned long
 get_RAM_size(void)
 {
 	BUG_ON(! brcm_dram0_size);
+printk("%s: brcm_dram0_size=%08x\n", __FUNCTION__, brcm_dram0_size);
 	return(brcm_dram0_size);
 }
 
@@ -307,6 +315,62 @@ static void early_read_int(char *param, int *var)
 	*var = memparse(cp, &cp);
 }
 
+#define PINMUX(reg, field, val) do { \
+	BDEV_WR(BCHP_SUN_TOP_CTRL_PIN_MUX_CTRL_##reg, \
+		(BDEV_RD(BCHP_SUN_TOP_CTRL_PIN_MUX_CTRL_##reg) & \
+		 ~BCHP_SUN_TOP_CTRL_PIN_MUX_CTRL_##reg##_##field##_MASK) | \
+		((val) << \
+		 BCHP_SUN_TOP_CTRL_PIN_MUX_CTRL_##reg##_##field##_SHIFT)); \
+	} while(0)
+
+static void __init board_pinmux_setup(void)
+{
+#if ! defined(CONFIG_MIPS_BRCM_SIM)
+#if   defined(CONFIG_MIPS_BCM7420)
+	PINMUX(7, gpio_000, 1);		// ENET LEDs
+	PINMUX(7, gpio_001, 1);
+
+	PINMUX(21, sgpio_02, 1);	// MoCA I2C
+	PINMUX(21, sgpio_03, 1);
+
+	PINMUX(9, gpio_017, 1);		// MoCA LEDs
+	PINMUX(9, gpio_019, 1);
+
+	PINMUX(7, gpio_002, 1);		// RGMII
+	PINMUX(7, gpio_003, 1);
+	PINMUX(7, gpio_004, 1);
+	PINMUX(7, gpio_005, 1);
+	PINMUX(7, gpio_006, 1);
+	PINMUX(7, gpio_007, 1);
+	PINMUX(8, gpio_009, 1);
+	PINMUX(8, gpio_010, 1);
+	PINMUX(8, gpio_011, 1);
+	PINMUX(8, gpio_012, 1);
+	PINMUX(8, gpio_013, 1);
+	PINMUX(8, gpio_014, 1);
+	PINMUX(20, gpio_108, 4);	/*RGMII SDC/SDL */
+	PINMUX(20, gpio_109, 5);
+
+	/* set RGMII lines to 2.5V */
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_002, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_003, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_004, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_005, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_006, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_007, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_009, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_010, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_011, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_012, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_013, 1);
+	BDEV_WR_F(SUN_TOP_CTRL_GENERAL_CTRL_NO_SCAN_1, pad_mode_gpio_014, 1);
+#endif /* CONFIG_MIPS_BCM7420 */
+#endif /* ! CONFIG_MIPS_BRCM_SIM */
+}
+
+
+cfePartitions_t gCfePartitions; 
+
 void __init prom_init(void)
 {
 
@@ -320,6 +384,8 @@ void __init prom_init(void)
 
 	/* jipeng - mask out UPG L2 interrupt here */
 	BDEV_WR(BCHP_IRQ0_IRQEN, 0);
+
+	board_pinmux_setup();
 
 	/* Fill in platform information */
 	mips_machgroup = MACH_GROUP_BRCM;
@@ -434,12 +500,15 @@ void __init prom_init(void)
 
 		/* display warning for all 00's, all ff's, or multicast */
 		if(! ok || (gHwAddrs[0][1] & 1)) {
+			u8 fixed_macaddr[] = { 0x00,0x00,0xde,0xad,0xbe,0xef };
 			printk(KERN_WARNING
 				"WARNING: read invalid MAC address "
 				"%02x:%02x:%02x:%02x:%02x:%02x from flash @ 0x%08x\n",
 				gHwAddrs[0][0], gHwAddrs[0][1], gHwAddrs[0][2],
 				gHwAddrs[0][3], gHwAddrs[0][4], gHwAddrs[0][5],
 				FLASH_MACADDR_ADDR);
+			memcpy(&gHwAddrs[0][0], fixed_macaddr,
+				sizeof(fixed_macaddr));
 		}
 #else
 		/* PCI slave mode - no EBI/flash available */
@@ -476,6 +545,13 @@ void __init prom_init(void)
 		(void) board_get_cfe_env();
 	}
 
+#else
+
+
+	bcm_get_cfe_partition_env();
+
+
+
 #endif
 
 	/* RYH - RAC */
@@ -500,7 +576,7 @@ void __init prom_init(void)
 	  else {
 #if defined(CONFIG_BMIPS4380) || defined(CONFIG_BMIPS5000)
 		par_val = 0xff;		/* default: keep CFE setting */
-#elif !defined(CONFIG_MIPS_BCM7325A0)	/* no RAC in 7325A0 */
+#elif !defined(CONFIG_MIPS_BCM7325B0)	/* no RAC in 7325B0 */
 		par_val = 0x03;		/* set default to I/D RAC on */
 #endif
 		par_val2 = (get_RAM_size()-1) & 0xffff0000;
@@ -706,12 +782,13 @@ void __init prom_init(void)
 		g_board_RAM_size = get_RAM_size();
 		ramSizeMB = g_board_RAM_size >> 20;
 
+printk("g_board_RAM_size=%dMB\n", ramSizeMB);
 
 		if (ramSizeMB <= 256) {
 			add_memory_region(0, g_board_RAM_size, BOOT_MEM_RAM);
 		}
 		else {
-#if defined (CONFIG_MIPS_BCM7440B0)
+#if defined (CONFIG_MIPS_BCM7440B0) || defined(CONFIG_MIPS_BCM7601)
 			/*
 			** On the 7440B0, Memory Region 0
 			** is split into a DMA region sized

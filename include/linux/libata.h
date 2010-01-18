@@ -39,7 +39,7 @@
 
 // jipeng - old sata core require this workaround
 #if ! defined(CONFIG_MIPS_BCM7405) && ! defined(CONFIG_MIPS_BCM7335) && \
-	! defined(CONFIG_MIPS_BCM7420)
+	! defined(CONFIG_MIPS_BCM7420) && ! defined(CONFIG_MIPS_BCM7336)
 #define	SATA_SVW_BRCM_WA
 #endif
 
@@ -73,7 +73,7 @@ extern int dma_write_wa_needed;
 #undef	writew
 #define	writew(val, mem)	*((volatile u16 *)(mem)) = cpu_to_le16((u16)(val))
 #endif
-	
+
 /*
  * compile-time options: to be removed as soon as all the drivers are
  * converted to the new debugging mechanism

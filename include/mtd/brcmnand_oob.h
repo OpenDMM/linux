@@ -78,8 +78,18 @@ static struct nand_ecclayout brcmnand_oob_16 = {
 			 * for 16 bit bus width, byte 4 is also not used.  If we only use byte-width chip, (We did)
 			 * then we can also use byte 4 as free bytes.
 			 */
+};
 
-
+/* Small page with BCH-4 */
+static struct nand_ecclayout brcmnand_oob_bch4_512 = {
+	.eccbytes	= 7,
+	.eccpos		= {
+		9,10,11,12,13,14,15
+		},
+	.oobfree	= { 	{.offset=0, .length=5}, 
+				{.offset=7,.length=2}, /* Byte 5 (6th byte) used for BI */
+				{.offset=0, .length=0}		/* End marker */
+			   }
 };
 
 /*
@@ -112,7 +122,7 @@ static struct nand_ecclayout brcmnand_oob_bch4_4k = {
 };
 
 /*
- * 2K page MLC with BCH-4 ECC, uses 7 ECC bytes per 512B ECC step
+ * 2K page SLC/MLC with BCH-4 ECC, uses 7 ECC bytes per 512B ECC step
  */
 static struct nand_ecclayout brcmnand_oob_bch4_2k = {
 	.eccbytes	= 7*8,  /* 7*8 = 56 bytes */
@@ -128,6 +138,36 @@ static struct nand_ecclayout brcmnand_oob_bch4_2k = {
 				{.offset=16,.length=9}, 		/* 2nd slice  */
 				{.offset=32, .length=9},		/* 3rd slice  */
 				{.offset=48, .length=9},		/* 4th slice */
+	            		{.offset=0, .length=0}			/* End marker */
+			}
+};
+
+
+/*
+ * 4K page MLC with BCH-8 ECC, uses 13 ECC bytes per 512B ECC step, and requires OOB size of 27B+
+ */
+static struct nand_ecclayout brcmnand_oob_bch8_4k = {
+	.eccbytes	= 13*8,  /* 13*8 = 56 bytes */
+	.eccpos		= { 
+		14,15,16,17,18,19,20,21,22,23,24,25,26,
+		41,42,43,44,45,46,47,48,49,50,51,52,53,
+		68,69,70,71,72,73,74,75,76,77,78,79,80,
+		95,96,97,98,99,100,101,102,103,104,105,106,107,
+		122,123,124,125,126,127,128,129,130,131,132,133,134,
+		149,150,151,152,153,154,155,156,157,158,159,160,161,
+		176,177,178,179,180,181,182,183,184,185,186,187,188,
+		203,204,205,206,207,208,209,210,211,212,213,214,215
+		},
+	.oobfree	= { /* 0  used for BBT and/or manufacturer bad block marker, 
+	                    * first slice loses 1 byte for BBT */
+				{.offset=1, .length=13}, 		/* 1st slice loses byte 0 */
+				{.offset=27,.length=14}, 		/* 2nd slice  */
+				{.offset=54, .length=14},		/* 3rd slice  */
+				{.offset=81, .length=14},		/* 4th slice */
+				{.offset=108, .length=14},		/* 5th slice */
+				{.offset=135, .length=14},		/* 6th slice */
+				{.offset=162, .length=14},		/* 7th slice */
+				{.offset=189, .length=14},		/* 8th slice */
 	            		{.offset=0, .length=0}			/* End marker */
 			}
 };
@@ -173,9 +213,9 @@ static struct nand_oobinfo brcmnand_oob_16 = {
 			 * for 16 bit bus width, byte 4 is also not used.  If we only use byte-width chip, (We did)
 			 * then we can also use byte 4 as free bytes.
 			 */
-
-
 };
+
+
 #endif /* 2.6.17 or earlier */
 #endif
 
