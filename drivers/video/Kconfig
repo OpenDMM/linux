@@ -54,7 +54,7 @@ config FB
 	  device-aware may cause unexpected results. If unsure, say N.
 
 config FB_CFB_FILLRECT
-	tristate
+	tristate "FB_CFB_FILLRECT"
 	depends on FB
 	default n
 	---help---
@@ -63,7 +63,7 @@ config FB_CFB_FILLRECT
 	  (accelerated) version.
 
 config FB_CFB_COPYAREA
-	tristate
+	tristate "FB_CFB_COPYAREA"
 	depends on FB
 	default n
 	---help---
@@ -72,7 +72,7 @@ config FB_CFB_COPYAREA
 	  version.
 
 config FB_CFB_IMAGEBLIT
-	tristate
+	tristate "FB_CFG_IMAGEBLIT"
 	depends on FB
 	default n
 	---help---
