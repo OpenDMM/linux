@@ -15,6 +15,7 @@
 #include <linux/compiler.h>
 #include <linux/kernel.h>
 #include <linux/types.h>
+#include <linux/mmzone.h>
 
 #include <asm/addrspace.h>
 #include <asm/byteorder.h>
@@ -48,7 +49,12 @@
 
 /* ioswab[bwlq], __mem_ioswab[bwlq] are defined in mangle-port.h */
 
+#ifndef CONFIG_MIPS_BRCM97XXX
 #define IO_SPACE_LIMIT 0xffff
+#else
+#define IO_SPACE_LIMIT 0x00ffffff
+#endif // else !CONFIG_MIPS_BRCM97XXX
+
 
 /*
  * On MIPS I/O ports are memory mapped, so we access them using normal
@@ -116,7 +122,11 @@ static inline void set_io_port_base(unsigned long base)
  */
 static inline unsigned long virt_to_phys(volatile void * address)
 {
+#ifdef CONFIG_DISCONTIGMEM
+	return __pa((unsigned long)address);
+#else
 	return (unsigned long)address - PAGE_OFFSET;
+#endif
 }
 
 /*
@@ -133,7 +143,11 @@ static inline unsigned long virt_to_phys(volatile void * address)
  */
 static inline void * phys_to_virt(unsigned long address)
 {
+#ifdef CONFIG_DISCONTIGMEM
+	return (void *)(__va(address));
+#else
 	return (void *)(address + PAGE_OFFSET);
+#endif
 }
 
 /*
@@ -141,12 +155,20 @@ static inline void * phys_to_virt(unsigned long address)
  */
 static inline unsigned long isa_virt_to_bus(volatile void * address)
 {
+#ifdef CONFIG_DISCONTIGMEM
+	return __pa((unsigned long)address);
+#else
 	return (unsigned long)address - PAGE_OFFSET;
+#endif
 }
 
 static inline void * isa_bus_to_virt(unsigned long address)
 {
+#ifdef CONFIG_DISCONTIGMEM
+	return (void *)(__va(address));
+#else
 	return (void *)(address + PAGE_OFFSET);
+#endif
 }
 
 #define isa_page_to_bus page_to_phys
@@ -517,6 +539,36 @@ static inline void memcpy_toio(volatile void __iomem *dst, const void *src, int 
 {
 	memcpy((void __force *) dst, src, count);
 }
+
+/*
+ * Memory Mapped I/O
+ */
+#if	0	// jipeng - it is redefined in iomap.c to check argument type
+#define ioread8(addr)		readb(addr)
+#define ioread16(addr)		readw(addr)
+#define ioread32(addr)		readl(addr)
+
+#define iowrite8(b,addr)	writeb(b,addr)
+#define iowrite16(w,addr)	writew(w,addr)
+#define iowrite32(l,addr)	writel(l,addr)
+
+#define ioread8_rep(a,b,c)	readsb(a,b,c)
+#define ioread16_rep(a,b,c)	readsw(a,b,c)
+#define ioread32_rep(a,b,c)	readsl(a,b,c)
+
+#define iowrite8_rep(a,b,c)	writesb(a,b,c)
+#define iowrite16_rep(a,b,c)	writesw(a,b,c)
+#define iowrite32_rep(a,b,c)	writesl(a,b,c)
+#endif	// 0
+
+/* Create a virtual mapping cookie for an IO port range */
+extern void __iomem *ioport_map(unsigned long port, unsigned int nr);
+extern void ioport_unmap(void __iomem *);
+
+/* Create a virtual mapping cookie for a PCI BAR (memory or IO) */
+struct pci_dev;
+extern void __iomem *pci_iomap(struct pci_dev *dev, int bar, unsigned long max);
+extern void pci_iounmap(struct pci_dev *dev, void __iomem *);
 
 /*
  * ISA space is 'always mapped' on currently supported MIPS systems, no need

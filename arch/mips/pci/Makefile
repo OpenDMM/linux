@@ -27,6 +27,23 @@ obj-$(CONFIG_BASLER_EXCITE)	+= ops-titan.o pci-excite.o fixup-excite.o
 obj-$(CONFIG_DDB5477)		+= fixup-ddb5477.o pci-ddb5477.o ops-ddb5477.o
 obj-$(CONFIG_LASAT)		+= pci-lasat.o
 obj-$(CONFIG_MIPS_ATLAS)	+= fixup-atlas.o
+
+# 7401-like chips
+obj-$(CONFIG_MIPS_BCM7401)  	+= pci-brcm97401a0.o ops-brcm97401a0.o fixup-brcm97401a0.o
+obj-$(CONFIG_MIPS_BCM7118)  	+= pci-brcm97401a0.o ops-brcm97401a0.o fixup-brcm97401a0.o
+obj-$(CONFIG_MIPS_BCM7403)	+= pci-brcm97401a0.o ops-brcm97401a0.o fixup-brcm97401a0.o
+
+# 7400-like chips
+obj-$(CONFIG_MIPS_BCM7400)  	+= pci-brcm97400d0.o ops-brcm97400d0.o fixup-brcm97400d0.o
+obj-$(CONFIG_MIPS_BCM7405)  	+= pci-brcm97400d0.o ops-brcm97400d0.o fixup-brcm97400d0.o
+obj-$(CONFIG_MIPS_BCM7335)  	+= pci-brcm97400d0.o ops-brcm97400d0.o fixup-brcm97400d0.o
+
+# Other STB chips
+obj-$(CONFIG_MIPS_BCM3560)  	+= pci-brcm93560.o ops-brcm93560.o fixup-brcm93560.o
+obj-$(CONFIG_MIPS_BCM7038C0)  	+= pci-brcm97038c0.o ops-brcm97038c0.o fixup-brcm97038c0.o
+obj-$(CONFIG_MIPS_BCM7440A0)    += pci-brcm97440.o ops-brcm97440.o fixup-brcm97440.o
+obj-$(CONFIG_MIPS_BCM7402)  	+= pci-brcm97402.o ops-brcm97402.o fixup-brcm97402.o
+
 obj-$(CONFIG_MIPS_COBALT)	+= fixup-cobalt.o
 obj-$(CONFIG_MIPS_EV64120)	+= pci-ev64120.o
 obj-$(CONFIG_MIPS_EV96100)	+= fixup-ev96100.o pci-ev96100.o

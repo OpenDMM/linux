@@ -2,6 +2,13 @@
 #define __CRAMFS_H
 
 #include <linux/types.h>
+#ifndef __KERNEL__
+
+typedef unsigned char u8;
+typedef unsigned short u16;
+typedef unsigned int u32;
+
+#endif
 
 #define CRAMFS_MAGIC		0x28cd3d45	/* some random number */
 #define CRAMFS_SIGNATURE	"Compressed ROMFS"

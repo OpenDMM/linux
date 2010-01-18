@@ -95,6 +95,26 @@ config SERIAL_NONSTANDARD
 
 	  Most people can say N here.
 
+config BRCM_7XXX_SERIAL
+	tristate "Broadcom STB BCM97XXX serial port support"
+	depends on MIPS_BRCM97XXX
+	select SERIAL_CONSOLE
+	help
+	  This is a driver which supports Broadcom serial ports 
+	  on Broadcom BCM97xxx STB series.
+
+config BRCM_SERIAL
+	tristate "Broadcom STB BCM93730|35|40 serial port support"
+	depends on MIPS_BCM93730
+	select SERIAL_CONSOLE
+	help
+	  This is a driver which supports Broadcom serial ports 
+	  on Broadcom BCM93730 STB series.
+
+config SERIAL_CONSOLE
+	bool
+
+
 config COMPUTONE
 	tristate "Computone IntelliPort Plus serial support"
 	depends on SERIAL_NONSTANDARD

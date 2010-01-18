@@ -4,12 +4,15 @@
 #  $Id: Makefile,v 1.8 2002/07/21 21:32:30 rmk Exp $
 #
 
+
 obj-$(CONFIG_SERIAL_CORE) += serial_core.o
 obj-$(CONFIG_SERIAL_21285) += 21285.o
 obj-$(CONFIG_SERIAL_8250) += 8250.o
 obj-$(CONFIG_SERIAL_8250_PNP) += 8250_pnp.o
 obj-$(CONFIG_SERIAL_8250_GSC) += 8250_gsc.o
-obj-$(CONFIG_SERIAL_8250_PCI) += 8250_pci.o
+ifneq ($(CONFIG_MIPS_BRCM97XXX),y)
+serial-8250-$(CONFIG_PCI) += 8250_pci.o
+endif
 obj-$(CONFIG_SERIAL_8250_HP300) += 8250_hp300.o
 obj-$(CONFIG_SERIAL_8250_CS) += serial_cs.o
 obj-$(CONFIG_SERIAL_8250_ACORN) += 8250_acorn.o

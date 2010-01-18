@@ -79,7 +79,8 @@ obj-$(CONFIG_RIONET) += rionet.o
 
 obj-$(CONFIG_MII) += mii.o
 obj-$(CONFIG_PHYLIB) += phy/
-
+obj-$(CONFIG_BCMINTEMAC_7038) += brcmint7038/
+#obj-$(CONFIG_BCMINTEMAC) += brcmint/
 obj-$(CONFIG_SUNDANCE) += sundance.o
 obj-$(CONFIG_HAMACHI) += hamachi.o
 obj-$(CONFIG_NET) += Space.o loopback.o
@@ -221,6 +222,6 @@ obj-$(CONFIG_ETRAX_ETHERNET) += cris/
 obj-$(CONFIG_ENP2611_MSF_NET) += ixp2000/
 
 obj-$(CONFIG_NETCONSOLE) += netconsole.o
-
+obj-$(CONFIG_KGDBOE) += kgdboe.o
 obj-$(CONFIG_FS_ENET) += fs_enet/
 

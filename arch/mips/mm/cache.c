@@ -33,8 +33,8 @@ void (*local_flush_data_cache_page)(void * addr);
 void (*flush_data_cache_page)(unsigned long addr);
 void (*flush_icache_all)(void);
 
-EXPORT_SYMBOL_GPL(local_flush_data_cache_page);
 EXPORT_SYMBOL(flush_data_cache_page);
+EXPORT_SYMBOL(flush_cache_all);
 
 #ifdef CONFIG_DMA_NONCOHERENT
 
@@ -56,12 +56,34 @@ EXPORT_SYMBOL(_dma_cache_inv);
 asmlinkage int sys_cacheflush(unsigned long addr,
 	unsigned long bytes, unsigned int cache)
 {
+	struct vm_area_struct* vma;
+
 	if (bytes == 0)
 		return 0;
 	if (!access_ok(VERIFY_WRITE, (void __user *) addr, bytes))
 		return -EFAULT;
 
-	flush_icache_range(addr, addr + bytes);
+	if (cache == DCACHE)
+	{
+		vma = find_vma(current->mm, (unsigned long) addr);
+		if (vma) {
+#ifdef CONFIG_MIPS_BRCM97XXX
+			brcm_r4k_flush_cache_range(vma,(unsigned long)addr,((unsigned long)addr) + bytes);
+#else
+			flush_cache_range(vma,(unsigned long)addr,((unsigned long)addr) + bytes);
+#endif
+		}
+		else {
+			flush_cache_all();
+		}
+	}
+	else if (cache == ICACHE) // THT PR17203 Added. We don't know if we can use IC_F_L on BMIPS3300
+	{
+		flush_icache_range(addr, addr + bytes);
+	}
+	else {
+		flush_cache_all();  // THT PR17203, for now....
+	}
 
 	return 0;
 }

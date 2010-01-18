@@ -926,7 +926,7 @@
 #define __NR_N32_Linux			6000
 #define __NR_N32_Linux_syscalls		278
 
-#ifdef __KERNEL__
+// TDT Messes up user apps #ifdef __KERNEL__
 
 #ifndef __ASSEMBLY__
 
@@ -1267,5 +1267,5 @@ asmlinkage long sys_rt_sigaction(int sig,
  */
 #define cond_syscall(x) asm(".weak\t" #x "\n" #x "\t=\tsys_ni_syscall")
 
-#endif /* __KERNEL__ */
+// TDT#endif /* __KERNEL__ */
 #endif /* _ASM_UNISTD_H */

@@ -150,6 +150,11 @@ static DEFINE_SPINLOCK(ptype_lock);
 static struct list_head ptype_base[16];	/* 16 way hashed list */
 static struct list_head ptype_all;		/* Taps */
 
+/* PR20221: netif_dma patch */
+#ifdef  CONFIG_NETIF_DMA_MODULE
+#define CONFIG_NETIF_DMA
+#endif
+
 #ifdef CONFIG_NET_DMA
 static struct dma_client *net_dma_client;
 static unsigned int net_dma_count;
@@ -1552,6 +1557,17 @@ int weight_p = 64;            /* old backlog weight */
 DEFINE_PER_CPU(struct netif_rx_stats, netdev_rx_stat) = { 0, };
 
 
+#ifdef  CONFIG_NETIF_DMA
+static int (*netif_rx_hook)(struct sk_buff *skb) = NULL;
+
+int netif_rx_sethook(int (*hook)(struct sk_buff *skb))
+{
+   netif_rx_hook = hook;
+   return 0;
+}
+
+EXPORT_SYMBOL(netif_rx_sethook);
+#endif
 /**
  *	netif_rx	-	post buffer to the network code
  *	@skb: buffer to post
@@ -1575,6 +1591,7 @@ int netif_rx(struct sk_buff *skb)
 	struct softnet_data *queue;
 	unsigned long flags;
 
+    
 	/* if netpoll wants it, pretend we never saw it */
 	if (netpoll_rx(skb))
 		return NET_RX_DROP;
@@ -1766,6 +1783,14 @@ int netif_receive_skb(struct sk_buff *skb)
 	struct net_device *orig_dev;
 	int ret = NET_RX_DROP;
 	unsigned short type;
+
+#ifdef  CONFIG_NETIF_DMA
+    if (netif_rx_hook) {
+        if (netif_rx_hook(skb)) {
+            return NET_RX_DROP;
+        }
+    }
+#endif    
 
 	/* if we've gotten here through NAPI, check netpoll */
 	if (skb->dev->poll && netpoll_rx(skb))

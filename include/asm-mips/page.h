@@ -32,6 +32,13 @@
 #define PAGE_SIZE	(1UL << PAGE_SHIFT)
 #define PAGE_MASK       (~((1 << PAGE_SHIFT) - 1))
 
+#ifdef CONFIG_MIPS_BRCM97XXX
+// Used in PCI space pfn calculations where signed bit is iset
+#define PAGE_SHIFT_MASK (((unsigned long) PAGE_MASK) >> PAGE_SHIFT)
+
+#endif
+
+
 #ifndef __ASSEMBLY__
 
 extern void clear_page(void * page);
@@ -124,13 +131,51 @@ typedef struct { unsigned long pgprot; } pgprot_t;
  */
 #define ptep_buddy(x)	((pte_t *)((unsigned long)(x) ^ sizeof(pte_t)))
 
+#ifdef CONFIG_DISCONTIGMEM
+
+/* defined in include/asm-mips/mach-brcmstb/mmzone.h */
+
+#elif defined(CONFIG_MIPS_BRCM97XXX)
+
+static __inline__ unsigned long __pa(unsigned long x)
+{
+	/* VA == PA for PCI MEM + PCI I/O */
+	if (((x >= 0xd0000000) && (x <= 0xf060000b)))
+		return x;
+#if defined(CONFIG_BMIPS3300)
+	/* same for BMIPS core registers */
+  	if (x >= 0xff400000)
+		return x;
+#endif
+	return (((unsigned long) (x)) - PAGE_OFFSET);
+}
+
+static __inline__ void* __va(unsigned long x)
+{
+	if (((x >= 0xd0000000) && (x <= 0xf060000b)))
+		return((void *)x);
+#if defined(CONFIG_BMIPS3300)
+  	if (x >= 0xff400000)
+		return((void *)x);
+#endif
+	return ((void *)((x) + PAGE_OFFSET));
+}
+
+#define virt_to_page(kaddr)		pfn_to_page((__pa((unsigned long) kaddr) >> PAGE_SHIFT) & 0x000fffff)
+#define virt_addr_valid(kaddr)	pfn_valid((__pa((unsigned long) kaddr) >> PAGE_SHIFT) & 0x000fffff)
+
+#else /* Non Broadcom STB codes */
+#define __pa(x)			(((unsigned long) (x)) - PAGE_OFFSET)
+#define __va(x)			((void *)(((unsigned long) (x)) + PAGE_OFFSET))
+
+#define virt_to_page(kaddr)		pfn_to_page(__pa(kaddr) >> PAGE_SHIFT)
+#define virt_addr_valid(kaddr)	pfn_valid(__pa(kaddr) >> PAGE_SHIFT)
+#endif
+
 #endif /* !__ASSEMBLY__ */
 
 /* to align the pointer to the (next) page boundary */
 #define PAGE_ALIGN(addr)	(((addr) + PAGE_SIZE - 1) & PAGE_MASK)
-
-#define __pa(x)			((unsigned long) (x) - PAGE_OFFSET)
-#define __va(x)			((void *)((unsigned long) (x) + PAGE_OFFSET))
 
 #define pfn_to_kaddr(pfn)	__va((pfn) << PAGE_SHIFT)
 
@@ -154,9 +199,6 @@ typedef struct { unsigned long pgprot; } pgprot_t;
 })
 
 #endif
-
-#define virt_to_page(kaddr)	pfn_to_page(__pa(kaddr) >> PAGE_SHIFT)
-#define virt_addr_valid(kaddr)	pfn_valid(__pa(kaddr) >> PAGE_SHIFT)
 
 #define VM_DATA_DEFAULT_FLAGS	(VM_READ | VM_WRITE | VM_EXEC | \
 				 VM_MAYREAD | VM_MAYWRITE | VM_MAYEXEC)

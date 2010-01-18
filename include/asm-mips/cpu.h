@@ -34,7 +34,6 @@
 #define PRID_COMP_LSI		0x080000
 #define PRID_COMP_LEXRA		0x0b0000
 
-
 /*
  * Assigned values for the product ID register.  In order to detect a
  * certain CPU type exactly eventually additional registers may need to
@@ -200,7 +199,11 @@
 #define CPU_SB1A		62
 #define CPU_74K			63
 #define CPU_R14000		64
-#define CPU_LAST		64
+#define CPU_BMIPS3200		65
+#define CPU_BMIPS3300		66
+#define CPU_BMIPS4350		67
+#define CPU_BMIPS4380		68
+#define CPU_LAST		68
 
 /*
  * ISA Level encodings

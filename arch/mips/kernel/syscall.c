@@ -151,7 +151,11 @@ old_mmap(unsigned long addr, unsigned long len, int prot,
 	if (offset & ~PAGE_MASK)
 		goto out;
 
+#ifdef CONFIG_MIPS_BRCM97XXX
+	result = do_mmap2(addr, len, prot, flags, fd, (offset >> PAGE_SHIFT)& 0x000fffff);
+#else
 	result = do_mmap2(addr, len, prot, flags, fd, offset >> PAGE_SHIFT);
+#endif
 
 out:
 	return result;

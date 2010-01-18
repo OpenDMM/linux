@@ -503,7 +503,7 @@ net2280_alloc_buffer (
 		/* the main problem with this call is that it wastes memory
 		 * on typical 1/N page allocations: it allocates 1-N pages.
 		 */
-#warning Using dma_alloc_coherent even with buffers smaller than a page.
+// THT We are not going this path for MIPS #warning Using dma_alloc_coherent even with buffers smaller than a page.
 		retval = dma_alloc_coherent(&ep->dev->pdev->dev,
 				bytes, dma, gfp_flags);
 	} else

@@ -156,6 +156,7 @@ static int jffs2_get_sb_mtd(struct file_system_type *fs_type,
 #ifdef CONFIG_JFFS2_FS_POSIX_ACL
 	sb->s_flags |= MS_POSIXACL;
 #endif
+
 	ret = jffs2_do_fill_super(sb, data, flags & MS_SILENT ? 1 : 0);
 
 	if (ret) {

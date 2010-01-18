@@ -8,14 +8,14 @@
  * For licensing information, see the file 'LICENCE' in the
  * jffs2 directory.
  *
- * $Id: jffs2.h,v 1.38 2005/09/26 11:37:23 havasi Exp $
+ * $Id: jffs2.h,v 1.40 2005/11/07 11:14:51 gleixner Exp $
  *
  */
 
 #ifndef __LINUX_JFFS2_H__
 #define __LINUX_JFFS2_H__
 
-/* You must include something which defines the C99 uintXX_t types. 
+/* You must include something which defines the C99 uintXX_t types.
    We don't do it from here because this file is used in too many
    different environments. */
 
@@ -27,6 +27,11 @@
 #define KSAMTIB_CIGAM_2SFFJ 0x8519 /* For detecting wrong-endian fs */
 #define JFFS2_EMPTY_BITMASK 0xffff
 #define JFFS2_DIRTY_BITMASK 0x0000
+
+/* JFFS2 eraseblock header compat/incompat/rocompat features set */
+#define JFFS2_EBH_COMPAT_FSET 0x00
+#define JFFS2_EBH_INCOMPAT_FSET 0x00
+#define JFFS2_EBH_ROCOMPAT_FSET 0x00
 
 /* Summary node MAGIC marker */
 #define JFFS2_SUM_MAGIC	0x02851885
@@ -63,19 +68,8 @@
 #define JFFS2_NODETYPE_CLEANMARKER (JFFS2_FEATURE_RWCOMPAT_DELETE | JFFS2_NODE_ACCURATE | 3)
 #define JFFS2_NODETYPE_PADDING (JFFS2_FEATURE_RWCOMPAT_DELETE | JFFS2_NODE_ACCURATE | 4)
 
+#define JFFS2_NODETYPE_ERASEBLOCK_HEADER (JFFS2_FEATURE_RWCOMPAT_DELETE | JFFS2_NODE_ACCURATE | 5)
 #define JFFS2_NODETYPE_SUMMARY (JFFS2_FEATURE_RWCOMPAT_DELETE | JFFS2_NODE_ACCURATE | 6)
-
-#define JFFS2_NODETYPE_XATTR (JFFS2_FEATURE_INCOMPAT | JFFS2_NODE_ACCURATE | 8)
-#define JFFS2_NODETYPE_XREF (JFFS2_FEATURE_INCOMPAT | JFFS2_NODE_ACCURATE | 9)
-
-/* XATTR Related */
-#define JFFS2_XPREFIX_USER		1	/* for "user." */
-#define JFFS2_XPREFIX_SECURITY		2	/* for "security." */
-#define JFFS2_XPREFIX_ACL_ACCESS	3	/* for "system.posix_acl_access" */
-#define JFFS2_XPREFIX_ACL_DEFAULT	4	/* for "system.posix_acl_default" */
-#define JFFS2_XPREFIX_TRUSTED		5	/* for "trusted.*" */
-
-#define JFFS2_ACL_VERSION		0x0001
 
 // Maybe later...
 //#define JFFS2_NODETYPE_CHECKPOINT (JFFS2_FEATURE_RWCOMPAT_DELETE | JFFS2_NODE_ACCURATE | 3)
@@ -94,11 +88,11 @@
 
 typedef struct {
 	uint32_t v32;
-} __attribute__((packed)) jint32_t;
+} __attribute__((packed))  jint32_t;
 
 typedef struct {
 	uint32_t m;
-} __attribute__((packed)) jmode_t;
+} __attribute__((packed))  jmode_t;
 
 typedef struct {
 	uint16_t v16;
@@ -111,7 +105,7 @@ struct jffs2_unknown_node
 	jint16_t nodetype;
 	jint32_t totlen; /* So we can skip over nodes we don't grok */
 	jint32_t hdr_crc;
-};
+} __attribute__((packed));
 
 struct jffs2_raw_dirent
 {
@@ -129,7 +123,7 @@ struct jffs2_raw_dirent
 	jint32_t node_crc;
 	jint32_t name_crc;
 	uint8_t name[0];
-};
+} __attribute__((packed));
 
 /* The JFFS2 raw inode structure: Used for storage on physical media.  */
 /* The uid, gid, atime, mtime and ctime members could be longer, but
@@ -161,33 +155,6 @@ struct jffs2_raw_inode
 	jint32_t data_crc;   /* CRC for the (compressed) data.  */
 	jint32_t node_crc;   /* CRC for the raw inode (excluding data)  */
 	uint8_t data[0];
-};
-
-struct jffs2_raw_xattr {
-	jint16_t magic;
-	jint16_t nodetype;	/* = JFFS2_NODETYPE_XATTR */
-	jint32_t totlen;
-	jint32_t hdr_crc;
-	jint32_t xid;		/* XATTR identifier number */
-	jint32_t version;
-	uint8_t xprefix;
-	uint8_t name_len;
-	jint16_t value_len;
-	jint32_t data_crc;
-	jint32_t node_crc;
-	uint8_t data[0];
-} __attribute__((packed));
-
-struct jffs2_raw_xref
-{
-	jint16_t magic;
-	jint16_t nodetype;	/* = JFFS2_NODETYPE_XREF */
-	jint32_t totlen;
-	jint32_t hdr_crc;
-	jint32_t ino;		/* inode number */
-	jint32_t xid;		/* XATTR identifier number */
-	jint32_t xseqno;	/* xref sequencial number */
-	jint32_t node_crc;
 } __attribute__((packed));
 
 struct jffs2_raw_summary
@@ -202,22 +169,38 @@ struct jffs2_raw_summary
 	jint32_t sum_crc;	/* summary information crc */
 	jint32_t node_crc; 	/* node crc */
 	jint32_t sum[0]; 	/* inode summary info */
-};
+} __attribute__((packed));
+
+struct jffs2_raw_ebh
+{
+	jint16_t magic;
+	jint16_t nodetype; /* == JFFS2_NODETYPE_ERASEBLOCK_HEADER */
+	jint32_t totlen;
+	jint32_t hdr_crc;
+	jint32_t node_crc;
+	uint8_t  reserved; /* reserved for future use and alignment */
+	uint8_t  compat_fset;
+	uint8_t  incompat_fset;
+	uint8_t  rocompat_fset;
+	jint32_t erase_count; /* the erase count of this erase block */
+	jint32_t data[0];
+} __attribute__((packed));
+
 
 union jffs2_node_union
 {
 	struct jffs2_raw_inode i;
 	struct jffs2_raw_dirent d;
-	struct jffs2_raw_xattr x;
-	struct jffs2_raw_xref r;
 	struct jffs2_raw_summary s;
+	struct jffs2_raw_ebh eh;
 	struct jffs2_unknown_node u;
 };
 
 /* Data payload for device nodes. */
 union jffs2_device_node {
-	jint16_t old;
-	jint32_t new;
+        jint16_t old;
+        jint32_t new;
 };
+
 
 #endif /* __LINUX_JFFS2_H__ */

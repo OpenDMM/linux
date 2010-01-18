@@ -18,6 +18,7 @@
 #include <asm/addrspace.h>
 #include <asm/cpu-features.h>
 #include <asm/dsp.h>
+#include <asm/ptrace.h>
 #include <asm/war.h>
 
 /*
@@ -199,6 +200,9 @@ do {									\
  */
 static inline void sched_cacheflush(void)
 {
+	extern void (*flush_cache_all)(void);
+
+	flush_cache_all();
 }
 
 static inline unsigned long __xchg_u32(volatile int * m, unsigned int val)

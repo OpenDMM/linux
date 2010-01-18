@@ -3,18 +3,29 @@
  *
  *  Copyright (C) 1995, 1996, 2001  Ralf Baechle
  *  Copyright (C) 2001, 2004  MIPS Technologies, Inc.
- *  Copyright (C) 2004  Maciej W. Rozycki
+ *  Copyright (C) 2004  Maciej W. Rozycki 
  */
 #include <linux/delay.h>
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/seq_file.h>
 #include <asm/bootinfo.h>
+#include <asm/atomic.h>
 #include <asm/cpu.h>
 #include <asm/cpu-features.h>
 #include <asm/mipsregs.h>
 #include <asm/processor.h>
 #include <asm/watch.h>
+#include <asm/cacheflush.h>
+
+
+#ifdef  CONFIG_PROC_FS
+extern atomic_t unaligned_instructions;
+extern atomic_t brdhwr_ctr, rdhwr_ctr;
+#ifdef CONFIG_SMP
+extern atomic_t process_migrations;
+#endif
+#endif
 
 unsigned int vced_count, vcei_count;
 
@@ -84,8 +95,15 @@ static const char *cpu_name[] = {
 	[CPU_VR4181A]	= "NEC VR4181A",
 	[CPU_SR71000]	= "Sandcraft SR71000",
 	[CPU_PR4450]	= "Philips PR4450",
+	/* PR22847 - Add Broadcom models */
+	[CPU_BMIPS3300]	= "BMIPS3300",
+	[CPU_BMIPS4350]	= "BMIPS4350",
+	[CPU_BMIPS4380]	= "BMIPS4380",
 };
 
+extern unsigned int par_val;	
+
+unsigned long rac_config0, rac_config1, rac_address_range;
 
 static int show_cpuinfo(struct seq_file *m, void *v)
 {
@@ -102,8 +120,11 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	/*
 	 * For the first processor also print the system type
 	 */
-	if (n == 0)
+	if (n == 0) {
 		seq_printf(m, "system type\t\t: %s\n", get_system_type());
+		seq_printf(m, "build target\t\t: %s\n",
+			CONFIG_BRCM_BUILD_TARGET);
+	}
 
 	seq_printf(m, "processor\t\t: %ld\n", n);
 	sprintf(fmt, "cpu model\t\t: %%s V%%d.%%d%s\n",
@@ -112,9 +133,13 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	                            cpu_data[n].cputype : CPU_UNKNOWN],
 	                           (version >> 4) & 0x0f, version & 0x0f,
 	                           (fp_vers >> 4) & 0x0f, fp_vers & 0x0f);
-	seq_printf(m, "BogoMIPS\t\t: %lu.%02lu\n",
+	/* PR23257 : Needed for Oprofile report */
+ 	seq_printf(m, "cpu MHz\t\t\t: %lu.%02lu\n",
 	              cpu_data[n].udelay_val / (500000/HZ),
 	              (cpu_data[n].udelay_val / (5000/HZ)) % 100);
+	seq_printf(m, "BogoMIPS\t\t: %lu.%02lu    ( udelay_val : %lu  HZ = %d )\n",
+	              cpu_data[n].udelay_val / (500000/HZ),
+	              (cpu_data[n].udelay_val / (5000/HZ)) % 100, cpu_data[n].udelay_val, HZ);
 	seq_printf(m, "wait instruction\t: %s\n", cpu_wait ? "yes" : "no");
 	seq_printf(m, "microsecond timers\t: %s\n",
 	              cpu_has_counter ? "yes" : "no");
@@ -136,7 +161,44 @@ static int show_cpuinfo(struct seq_file *m, void *v)
 	        cpu_has_vce ? "%u" : "not available");
 	seq_printf(m, fmt, 'D', vced_count);
 	seq_printf(m, fmt, 'I', vcei_count);
-	seq_printf(m, "\n");
+
+	{
+		char *rac_setting;
+		
+		switch(par_val) {
+			case 0: 
+				rac_setting = "I/D-RAC disabled";
+				break;
+			case 1: 
+				rac_setting = "I-RAC enabled";
+				break;
+			case 2: 
+				rac_setting = "D-RAC enabled";
+				break;
+			case 3: 
+				rac_setting = "I/D-RAC enabled";
+				break;
+			default:
+				rac_setting = "Unknown";
+				break;
+		}
+
+		seq_printf(m, "RAC setting\t\t: %s\n", rac_setting);
+	}
+
+	if(n == 0) {
+		seq_printf(m, "unaligned access\t: %d\n",
+			atomic_read(&unaligned_instructions));
+		seq_printf(m, "rdhwr/brdhwr traps\t: %d / %d\n",
+			atomic_read(&rdhwr_ctr), atomic_read(&brdhwr_ctr));
+#ifdef CONFIG_SMP
+		seq_printf(m, "process migrations\t: %d\n",
+			atomic_read(&process_migrations));
+#endif
+#ifdef CONFIG_CACHE_STATS
+		cache_printstats(m);
+#endif
+	}
 
 	return 0;
 }

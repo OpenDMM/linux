@@ -23,6 +23,8 @@
 #include <linux/spinlock.h>
 #include <linux/interrupt.h>
 #include <linux/module.h>
+#include <linux/cpufreq.h>
+#include <linux/delay.h>
 
 #include <asm/bootinfo.h>
 #include <asm/cache.h>
@@ -43,6 +45,17 @@
 #define USECS_PER_JIFFY_FRAC	((unsigned long)(u32)((1000000ULL << 32) / HZ))
 
 #define TICK_SIZE	(tick_nsec / 1000)
+
+int (*perf_irq)(struct pt_regs *regs);
+
+int null_perf_irq(struct pt_regs *regs)
+{
+	return 0;
+}
+
+EXPORT_SYMBOL(null_perf_irq);
+EXPORT_SYMBOL(perf_irq);
+
 
 /*
  * forward reference
@@ -116,9 +129,17 @@ static void c0_timer_ack(void)
 
 	/* Check to see if we have missed any timer interrupts.  */
 	while (((count = read_c0_count()) - expirelo) < 0x7fffffff) {
+#if defined(CONFIG_MIPS_BRCM97XXX) && defined(CONFIG_SMP)
+		/* need to try to keep the count register on both TPs synched */
+		unsigned int missed = (count - expirelo) / cycles_per_jiffy;
+
+		expirelo += cycles_per_jiffy * (missed + 2);
+		write_c0_compare(expirelo);
+#else
 		/* missed_timer_count++; */
 		expirelo = count + cycles_per_jiffy;
 		write_c0_compare(expirelo);
+#endif
 	}
 }
 
@@ -413,6 +434,8 @@ void local_timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	update_process_times(user_mode(regs));
 }
 
+extern int performance_enabled;
+
 /*
  * High-level timer interrupt service routines.  This function
  * is set as irqaction->handler and is invoked through do_IRQ.
@@ -421,6 +444,13 @@ irqreturn_t timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 {
 	unsigned long j;
 	unsigned int count;
+
+#ifdef CONFIG_OPROFILE
+	if ((performance_enabled) && (perf_irq != null_perf_irq) && (read_c0_cause() & (1 << 26))) 
+	{	
+		perf_irq(regs);
+	}
+#endif
 
 	write_seqlock(&xtime_lock);
 
@@ -508,16 +538,6 @@ irqreturn_t timer_interrupt(int irq, void *dev_id, struct pt_regs *regs)
 	return IRQ_HANDLED;
 }
 
-int null_perf_irq(struct pt_regs *regs)
-{
-	return 0;
-}
-
-int (*perf_irq)(struct pt_regs *regs) = null_perf_irq;
-
-EXPORT_SYMBOL(null_perf_irq);
-EXPORT_SYMBOL(perf_irq);
-
 asmlinkage void ll_timer_interrupt(int irq, struct pt_regs *regs)
 {
 	int r2 = cpu_has_mips_r2;
@@ -525,15 +545,18 @@ asmlinkage void ll_timer_interrupt(int irq, struct pt_regs *regs)
 	irq_enter();
 	kstat_this_cpu.irqs[irq]++;
 
+
 	/*
 	 * Suckage alert:
 	 * Before R2 of the architecture there was no way to see if a
 	 * performance counter interrupt was pending, so we have to run the
 	 * performance counter interrupt handler anyway.
 	 */
-	if (!r2 || (read_c0_cause() & (1 << 26)))
+	if (!r2 || (read_c0_cause() & (1 << 26))) 
+	{	
 		if (perf_irq(regs))
 			goto out;
+	}
 
 	/* we keep interrupt disabled all the time */
 	if (!r2 || (read_c0_cause() & (1 << 30)))
@@ -719,6 +742,69 @@ void __init time_init(void)
 	 */
 	plat_timer_setup(&timer_irqaction);
 }
+
+#ifdef CONFIG_CPU_FREQ
+
+static unsigned int  ref_freq = 0;
+static unsigned long loops_per_jiffy_ref = 0, mips_hpt_frequency_ref = 0;
+
+static int
+time_cpufreq_notifier(struct notifier_block *nb, unsigned long val,
+		       void *data)
+{
+	struct cpufreq_freqs *freq = data;
+
+	if (!ref_freq) {
+		ref_freq = freq->old;
+		loops_per_jiffy_ref = loops_per_jiffy;
+		mips_hpt_frequency_ref = mips_hpt_frequency;
+	}
+
+	if ((val == CPUFREQ_PRECHANGE  && freq->old < freq->new) ||
+	    (val == CPUFREQ_POSTCHANGE && freq->old > freq->new) ||
+	    (val == CPUFREQ_RESUMECHANGE)) {
+		if (!(freq->flags & CPUFREQ_CONST_LOOPS))
+		{
+			mips_hpt_frequency = cpufreq_scale(
+				mips_hpt_frequency_ref, ref_freq, freq->new);
+			loops_per_jiffy = cpufreq_scale(
+				loops_per_jiffy_ref, ref_freq, freq->new);
+			cpu_data[freq->cpu].udelay_val = loops_per_jiffy;
+
+			/*
+			 * recalculate operating params based on new hpt
+			 * frequency
+			 */
+			cycles_per_jiffy = (mips_hpt_frequency + HZ / 2) / HZ;
+
+			/*
+			 * sll32_usecs_per_cycle =
+			 *	10^6 * 2^32 / mips_counter_freq
+			 */
+			do_div64_32(sll32_usecs_per_cycle,
+				    1000000, mips_hpt_frequency / 2,
+				    mips_hpt_frequency);
+		}
+	}
+	
+	return(0);
+}
+
+static struct notifier_block time_cpufreq_notifier_block = {
+	.notifier_call	= time_cpufreq_notifier
+};
+
+
+static int __init cpufreq_time(void)
+{
+	int ret;
+	ret = cpufreq_register_notifier(&time_cpufreq_notifier_block,
+					CPUFREQ_TRANSITION_NOTIFIER);
+	return ret;
+}
+core_initcall(cpufreq_time);
+
+#endif /* CONFIG_CPU_FREQ */
 
 #define FEBRUARY		2
 #define STARTOFTIME		1970

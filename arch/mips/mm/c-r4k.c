@@ -12,6 +12,8 @@
 #include <linux/sched.h>
 #include <linux/mm.h>
 #include <linux/bitops.h>
+#include <linux/module.h>
+#include <linux/seq_file.h>
 
 #include <asm/bcache.h>
 #include <asm/bootinfo.h>
@@ -27,7 +29,6 @@
 #include <asm/mmu_context.h>
 #include <asm/war.h>
 #include <asm/cacheflush.h> /* for run_uncached() */
-
 
 /*
  * Special Variant of smp_call_function for use by cache functions:
@@ -49,12 +50,236 @@ static inline void r4k_on_each_cpu(void (*func) (void *info), void *info,
 	preempt_enable();
 }
 
-/*
- * Must die.
- */
 static unsigned long icache_size __read_mostly;
 static unsigned long dcache_size __read_mostly;
 static unsigned long scache_size __read_mostly;
+
+#ifdef CONFIG_MIPS_BRCM97XXX
+static unsigned long icache_size, dcache_size, scache_size;
+
+/* RYH */
+static int rac_set = 0;
+extern int par_val;
+extern char cfeBootParms[]; 
+extern unsigned long rac_config0, rac_config1, rac_address_range;
+#endif	// CONFIG_MIPS_BRCM97XXX
+
+#if defined (CONFIG_SMP) && \
+   (defined (CONFIG_MIPS_BCM7400) || defined (CONFIG_MIPS_BCM7440A0) || \
+    defined (CONFIG_MIPS_BCM7405) || defined (CONFIG_MIPS_BCM7335) || \
+    defined (CONFIG_MIPS_BCM3548))
+/*
+ * PR36773:
+ * BRCM_CMT_CACHE_WAR_0 controls D$-only flush.  Should never be global.
+ * BRCM_CMT_CACHE_WAR_1 controls mixed I$/D$ or I$ only.  Generally a good
+ *   idea to make these global since I$ is not shared on BMIPS43xx.
+ *
+ * If defined, the flush is local.  If not defined, it is global.
+ */
+#define BRCM_CMT_CACHE_WAR_0
+// #define BRCM_CMT_CACHE_WAR_1
+#endif
+
+#ifdef CONFIG_CACHE_STATS
+/*
+ * NOTE: would be nice to use atomic64_t here, but it doesn't seem to be
+ * available on MIPS32
+ */
+typedef unsigned long long cachestat_t;
+
+static cachestat_t cache_all_count;		/* local_r4k___flush_cache_all */
+static cachestat_t cache_all_cycles;
+static cachestat_t cache_mm_count;		/* local_r4k_flush_cache_mm */
+static cachestat_t cache_mm_cycles;
+static cachestat_t cache_page_count;		/* local_r4k_flush_cache_page */
+static cachestat_t cache_page_cycles;
+static cachestat_t cache_ipage_count;		/* local_r4k_flush_icache_page */
+static cachestat_t cache_ipage_cycles;
+static cachestat_t cache_range_count;		/* local_r4k_flush_cache_range */
+static cachestat_t cache_range_cycles;
+static cachestat_t cache_brange_count;		/* brcm_r4k_flush_cache_range */
+static cachestat_t cache_brange_cycles;
+static cachestat_t cache_sigtramp_count;	/* local_r4k_flush_cache_sigtramp */
+static cachestat_t cache_sigtramp_cycles;
+static cachestat_t cache_iflush_count;		/* r4k_flush_icache_all */
+static cachestat_t cache_iflush_cycles;
+static cachestat_t cache_dpage_count;		/* local_r4k_flush_data_cache_page */
+static cachestat_t cache_dpage_cycles;
+static cachestat_t cache_irange_count;		/* local_r4k_flush_icache_range */
+static cachestat_t cache_irange_cycles;
+static cachestat_t cache_dmawb_count;		/* r4k_dma_cache_wback_inv */
+static cachestat_t cache_dmawb_cycles;
+static cachestat_t cache_dmainv_count;		/* r4k_dma_cache_inv */
+static cachestat_t cache_dmainv_cycles;
+
+void cache_printstats(struct seq_file *m)
+{
+	seq_printf(m, "local_r4k__flush_cache_all      : %-12llu (%llu)\n",
+		cache_all_count, cache_all_cycles);
+	seq_printf(m, "local_r4k_flush_cache_mm        : %-12llu (%llu)\n",
+		cache_mm_count, cache_mm_cycles);
+	seq_printf(m, "local_r4k_flush_cache_page      : %-12llu (%llu)\n",
+		cache_page_count, cache_page_cycles);
+	seq_printf(m, "local_r4k_flush_icache_page     : %-12llu (%llu)\n",
+		cache_ipage_count, cache_ipage_cycles);
+	seq_printf(m, "local_r4k_flush_cache_range     : %-12llu (%llu)\n",
+		cache_range_count, cache_range_cycles);
+	seq_printf(m, "brcm_r4k_flush_cache_range      : %-12llu (%llu)\n",
+		cache_brange_count, cache_brange_cycles);
+	seq_printf(m, "local_r4k_flush_cache_sigtramp  : %-12llu (%llu)\n",
+		cache_sigtramp_count, cache_sigtramp_cycles);
+	seq_printf(m, "r4k_flush_icache_all            : %-12llu (%llu)\n",
+		cache_iflush_count, cache_iflush_cycles);
+	seq_printf(m, "local_r4k_flush_data_cache_page : %-12llu (%llu)\n",
+		cache_dpage_count, cache_dpage_cycles);
+	seq_printf(m, "local_r4k_flush_icache_range    : %-12llu (%llu)\n",
+		cache_irange_count, cache_irange_cycles);
+	seq_printf(m, "r4k_dma_cache_wback_inv         : %-12llu (%llu)\n",
+		cache_dmawb_count, cache_dmawb_cycles);
+	seq_printf(m, "r4k_dma_cache_inv               : %-12llu (%llu)\n",
+		cache_dmainv_count, cache_dmainv_cycles);
+}
+
+#define CACHE_ENTER(x) long long cache_time = read_c0_count()
+
+#define CACHE_EXIT(x)  do { \
+	cache_time = read_c0_count() - cache_time; \
+	if(cache_time < 0) \
+		cache_time += 0x100000000LL; \
+	cache_##x##_count++; \
+	cache_##x##_cycles += cache_time; \
+	} while(0)
+
+#else
+
+#define CACHE_ENTER(x) do { } while(0)
+#define CACHE_EXIT(x)  do { } while(0)
+	
+#endif
+
+static void (* r4k_blast_scache)(void);
+
+#ifdef CONFIG_MIPS_BRCM97XXX
+
+static inline
+void bcm_local_inv_rac_all(void)
+{
+
+#if defined( CONFIG_MIPS_BCM7115 ) || defined( CONFIG_MIPS_BCM7112 ) ||\
+      defined( CONFIG_MIPS_BCM7315 ) || defined( CONFIG_MIPS_BCM7317 ) ||\
+      defined( CONFIG_MIPS_BCM7314 ) || defined( CONFIG_MIPS_BCM7318 ) ||\
+      defined( CONFIG_MIPS_BCM7110 ) || defined( CONFIG_MIPS_BCM7111 )
+	/* If RAC is Enabled (RAC_EN) */
+	if (*((volatile unsigned long *)0xffe00404) & 0x08)
+	{
+		unsigned long flags;
+
+		local_irq_save(flags);
+		*((volatile unsigned long *)0xffe00400) |= 0x02;
+		while ( (*((volatile unsigned long *)0xffe00400) & 0x02) == 0);
+		local_irq_restore(flags);
+	}
+	/* else do nothing */
+#elif defined (CONFIG_MIPS_BCM7320) || defined (CONFIG_MIPS_BCM7319) \
+	|| defined(CONFIG_MIPS_BCM7328)
+	if (*((volatile unsigned long *)0xbae00404) & 0x08)
+	{
+		unsigned long flags;
+
+		local_irq_save(flags);
+		*((volatile unsigned long *)0xbae00400) |= 0x02;
+		while ( (*((volatile unsigned long *)0xbae00400) & 0x02) == 0);
+		local_irq_restore(flags);
+	}
+	/* else do nothing */
+#elif defined (CONFIG_MIPS_BCM3560) || defined (CONFIG_MIPS_BCM7401) \
+	|| defined (CONFIG_MIPS_BCM7402) || defined(CONFIG_MIPS_BCM7118) \
+	|| defined (CONFIG_MIPS_BCM7403)
+	if (*((volatile unsigned long *)0xff400000) & 0x02)	/* RYH - check RAC_D bit in RAC Config Register */
+	{
+		unsigned long flags;
+
+		local_irq_save(flags);
+		*((volatile unsigned long *)0xff400000) |= 0x100;    /* RYH - set FLH bit in RAC Config Register */
+		local_irq_restore(flags);
+	}
+
+#elif defined (CONFIG_MIPS_BCM7400) || defined (CONFIG_MIPS_BCM7440) \
+	|| defined (CONFIG_MIPS_BCM7405) || defined(CONFIG_MIPS_BCM7335) \
+	|| defined (CONFIG_MIPS_BCM3548)
+#ifndef CONFIG_SMP
+	if (*((volatile unsigned long *)rac_config0) & 0x02)	/* check RAC_D bit in RAC Config Register for TP0 */
+#else
+	if ((*((volatile unsigned long *)rac_config0) & 0x02) || (*((volatile unsigned long *)rac_config1) & 0x02))
+#endif
+	{
+		unsigned long flags;
+
+		local_irq_save(flags);
+		*((volatile unsigned long *)rac_config0) |= 0x100;    /*  set FLH bit in RAC Config Register */
+		local_irq_restore(flags);
+	}
+
+/* RAC not implemented in 7038A0 */
+#elif defined(CONFIG_MIPS_BCM7038B0) || defined(CONFIG_MIPS_BCM7038C0)
+	{
+		unsigned long flags;
+
+		if (*((volatile unsigned long *)0xb0000404) & 0x10)
+		{
+			local_irq_save(flags);
+			*((volatile unsigned long *)0xb000040c) = 0x01;
+			mb();
+			while( (*((volatile unsigned long *)0xb0000424) & 0xffff) != 0);
+			*((volatile unsigned long *)0xb000040c) = 0x00;
+			local_irq_restore(flags);
+		}
+
+	}
+#endif
+}
+
+void bcm_inv_rac_all(void)
+{
+#if defined(CONFIG_MIPS_BCM7325) || defined( CONFIG_MIPS_BCM7440B0 ) \
+	|| defined( CONFIG_MIPS_BCM7443 )
+	/* 7325 L2 supports prefetching */
+#ifdef CONFIG_MIPS_BRCM_SCACHE
+	r4k_blast_scache();
+#endif
+	__sync();
+#else
+	bcm_local_inv_rac_all();
+#endif
+}
+EXPORT_SYMBOL(bcm_inv_rac_all);
+
+#define MIPS_24K_CACHEOP_WAR_IMPL       __sync()
+
+#if defined( CONFIG_MIPS_BCM7440B0 ) || defined( CONFIG_MIPS_BCM7325 ) \
+	|| defined( CONFIG_MIPS_BCM7443A0 ) 
+#define BCM_LOCAL_EXTRA_CACHEOP_WAR \
+        MIPS_24K_CACHEOP_WAR_IMPL
+
+        // TBD: Only certain platforms like the 7400, 7038Bx,Cx need an explicit
+        // RAC cache flush to be done after a regular flush
+#else
+#define BCM_LOCAL_EXTRA_CACHEOP_WAR bcm_local_inv_rac_all()
+#endif
+
+#else // Non Broadcom chip
+
+#define BCM_LOCAL_EXTRA_CACHEOP_WAR
+void bcm_inv_rac_all(void) { }
+
+#endif // CONFIG_MIPS_BRCM97XXX
+
+unsigned long
+get_dcache_size(void)
+{
+	return dcache_size;
+}
+
 
 /*
  * Dummy cache handling routines for machines without boardcaches
@@ -89,6 +314,12 @@ static inline void r4k_blast_dcache_page_dc32(unsigned long addr)
 	blast_dcache32_page(addr);
 }
 
+static inline void r4k_blast_dcache_page_dc64(unsigned long addr)
+{
+	R4600_HIT_CACHEOP_WAR_IMPL;
+	blast_dcache64_page(addr);
+}
+
 static inline void r4k_blast_dcache_page_setup(void)
 {
 	unsigned long  dc_lsize = cpu_dcache_line_size();
@@ -99,6 +330,8 @@ static inline void r4k_blast_dcache_page_setup(void)
 		r4k_blast_dcache_page = blast_dcache16_page;
 	else if (dc_lsize == 32)
 		r4k_blast_dcache_page = r4k_blast_dcache_page_dc32;
+	else if (dc_lsize == 64)
+		r4k_blast_dcache_page = r4k_blast_dcache_page_dc64;
 }
 
 static void (* r4k_blast_dcache_page_indexed)(unsigned long addr);
@@ -113,6 +346,8 @@ static inline void r4k_blast_dcache_page_indexed_setup(void)
 		r4k_blast_dcache_page_indexed = blast_dcache16_page_indexed;
 	else if (dc_lsize == 32)
 		r4k_blast_dcache_page_indexed = blast_dcache32_page_indexed;
+	else if (dc_lsize == 64)
+		r4k_blast_dcache_page_indexed = blast_dcache64_page_indexed;
 }
 
 static void (* r4k_blast_dcache)(void);
@@ -127,6 +362,8 @@ static inline void r4k_blast_dcache_setup(void)
 		r4k_blast_dcache = blast_dcache16;
 	else if (dc_lsize == 32)
 		r4k_blast_dcache = blast_dcache32;
+	else if (dc_lsize == 64)
+		r4k_blast_dcache = blast_dcache64;
 }
 
 /* force code alignment (used for TX49XX_ICACHE_INDEX_INV_WAR) */
@@ -298,8 +535,6 @@ static inline void r4k_blast_scache_page_indexed_setup(void)
 		r4k_blast_scache_page_indexed = blast_scache128_page_indexed;
 }
 
-static void (* r4k_blast_scache)(void);
-
 static inline void r4k_blast_scache_setup(void)
 {
 	unsigned long sc_lsize = cpu_scache_line_size();
@@ -324,6 +559,8 @@ static inline void local_r4k_flush_cache_all(void * args)
 {
 	r4k_blast_dcache();
 	r4k_blast_icache();
+
+	BCM_LOCAL_EXTRA_CACHEOP_WAR;
 }
 
 static void r4k_flush_cache_all(void)
@@ -331,11 +568,16 @@ static void r4k_flush_cache_all(void)
 	if (!cpu_has_dc_aliases)
 		return;
 
+#ifdef BRCM_CMT_CACHE_WAR_1
+	local_r4k_flush_cache_all(NULL);
+#else
 	r4k_on_each_cpu(local_r4k_flush_cache_all, NULL, 1, 1);
+#endif
 }
 
 static inline void local_r4k___flush_cache_all(void * args)
 {
+	CACHE_ENTER(all);
 	r4k_blast_dcache();
 	r4k_blast_icache();
 
@@ -347,42 +589,128 @@ static inline void local_r4k___flush_cache_all(void * args)
 	case CPU_R10000:
 	case CPU_R12000:
 	case CPU_R14000:
+	case CPU_34K:
 		r4k_blast_scache();
 	}
+	CACHE_EXIT(all);
 }
 
 static void r4k___flush_cache_all(void)
 {
+#ifdef BRCM_CMT_CACHE_WAR_1
+	local_r4k___flush_cache_all(NULL);
+#else
 	r4k_on_each_cpu(local_r4k___flush_cache_all, NULL, 1, 1);
+#endif
 }
 
 static inline void local_r4k_flush_cache_range(void * args)
 {
 	struct vm_area_struct *vma = args;
 	int exec;
+	CACHE_ENTER(range);
 
-	if (!(cpu_context(smp_processor_id(), vma->vm_mm)))
+	if (!(cpu_context(smp_processor_id(), vma->vm_mm))) {
+		CACHE_EXIT(range);
 		return;
+	}
 
 	exec = vma->vm_flags & VM_EXEC;
 	if (cpu_has_dc_aliases || exec)
 		r4k_blast_dcache();
 	if (exec)
 		r4k_blast_icache();
+	BCM_LOCAL_EXTRA_CACHEOP_WAR;
+	CACHE_EXIT(range);
 }
+
+#ifdef CONFIG_MIPS_BRCM97XXX
+void brcm_r4k_flush_cache_range(struct vm_area_struct *vma, unsigned long start, unsigned long end)
+{
+	struct mm_struct *mm = vma->vm_mm;
+	unsigned long flags;
+	CACHE_ENTER(brange);
+
+#ifndef CONFIG_SMP
+	if(mm->context == 0) {
+		CACHE_EXIT(brange);
+		return;
+	}
+
+	start &= PAGE_MASK;
+#endif
+#ifdef DEBUG_CACHE
+	printk("brcm_r4k_flush_cache_range[%d,%08lx,%08lx]\n", (int)mm->context, start, end);
+#endif
+	
+	if (vma && mm) {		
+#ifdef CONFIG_SMP
+		if (!(cpu_context(smp_processor_id(), mm))) {
+			CACHE_EXIT(brange);
+			return;
+		}
+
+		if(mm->context == 0) {
+			CACHE_EXIT(brange);
+			return;
+		}
+
+		start &= PAGE_MASK;
+#endif
+		if(mm->context != current->mm->context) {
+			r4k_flush_cache_all();
+		} 
+		else if ((end - start) > get_dcache_size()) {
+			r4k_blast_dcache();
+		}
+		else {
+			pgd_t *pgd;
+			pud_t *pud;
+			pmd_t *pmd;
+			pte_t *pte;
+
+			local_irq_save(flags);
+			while(start < end) {
+				pgd = pgd_offset(mm,start);
+				pud = pud_offset(pgd, start);
+				pmd = pmd_offset(pud, start);
+				pte = pte_offset(pmd, start);
+
+				if(pte_val(*pte) & _PAGE_VALID)
+					r4k_blast_dcache_page(start);
+				start += PAGE_SIZE;
+			}
+			local_irq_restore(flags);
+		}
+	}
+#if defined(CONFIG_MIPS_BRCM_SCACHE)
+	r4k_blast_scache();
+#endif
+	BCM_LOCAL_EXTRA_CACHEOP_WAR;
+	CACHE_EXIT(brange);
+}
+#endif // Brcm imple of flush_cache_range
 
 static void r4k_flush_cache_range(struct vm_area_struct *vma,
 	unsigned long start, unsigned long end)
 {
+#ifdef BRCM_CMT_CACHE_WAR_1
+	local_r4k_flush_cache_range(vma);
+#else
 	r4k_on_each_cpu(local_r4k_flush_cache_range, vma, 1, 1);
+#endif
 }
 
 static inline void local_r4k_flush_cache_mm(void * args)
 {
 	struct mm_struct *mm = args;
+	CACHE_ENTER(mm);
 
 	if (!cpu_context(smp_processor_id(), mm))
+	{
+		CACHE_EXIT(mm);
 		return;
+	}
 
 	r4k_blast_dcache();
 	r4k_blast_icache();
@@ -396,6 +724,9 @@ static inline void local_r4k_flush_cache_mm(void * args)
 	    current_cpu_data.cputype == CPU_R4400SC ||
 	    current_cpu_data.cputype == CPU_R4400MC)
 		r4k_blast_scache();
+
+	BCM_LOCAL_EXTRA_CACHEOP_WAR;
+	CACHE_EXIT(mm);
 }
 
 static void r4k_flush_cache_mm(struct mm_struct *mm)
@@ -403,7 +734,11 @@ static void r4k_flush_cache_mm(struct mm_struct *mm)
 	if (!cpu_has_dc_aliases)
 		return;
 
+#ifdef BRCM_CMT_CACHE_WAR_1
+	local_r4k_flush_cache_mm(mm);
+#else
 	r4k_on_each_cpu(local_r4k_flush_cache_mm, mm, 1, 1);
+#endif
 }
 
 struct flush_cache_page_args {
@@ -424,13 +759,16 @@ static inline void local_r4k_flush_cache_page(void *args)
 	pud_t *pudp;
 	pmd_t *pmdp;
 	pte_t *ptep;
+	CACHE_ENTER(page);
 
 	/*
 	 * If ownes no valid ASID yet, cannot possibly have gotten
 	 * this page into the cache.
 	 */
-	if (cpu_context(smp_processor_id(), mm) == 0)
+	if (cpu_context(smp_processor_id(), mm) == 0) {
+		CACHE_EXIT(page);
 		return;
+	}
 
 	addr &= PAGE_MASK;
 	pgdp = pgd_offset(mm, addr);
@@ -442,8 +780,10 @@ static inline void local_r4k_flush_cache_page(void *args)
 	 * If the page isn't marked valid, the page cannot possibly be
 	 * in the cache.
 	 */
-	if (!(pte_val(*ptep) & _PAGE_PRESENT))
+	if (!(pte_val(*ptep) & _PAGE_PRESENT)) {
+		CACHE_EXIT(page);
 		return;
+	}
 
 	/*
 	 * Doing flushes for another ASID than the current one is
@@ -460,6 +800,8 @@ static inline void local_r4k_flush_cache_page(void *args)
 		if (exec)
 			r4k_blast_icache_page(addr);
 
+		BCM_LOCAL_EXTRA_CACHEOP_WAR;
+		CACHE_EXIT(page);
 		return;
 	}
 
@@ -483,6 +825,8 @@ static inline void local_r4k_flush_cache_page(void *args)
 		} else
 			r4k_blast_icache_page_indexed(addr);
 	}
+	BCM_LOCAL_EXTRA_CACHEOP_WAR;
+	CACHE_EXIT(page);
 }
 
 static void r4k_flush_cache_page(struct vm_area_struct *vma,
@@ -494,17 +838,28 @@ static void r4k_flush_cache_page(struct vm_area_struct *vma,
 	args.addr = addr;
 	args.pfn = pfn;
 
+
+#ifdef BRCM_CMT_CACHE_WAR_1
+	local_r4k_flush_cache_page(&args);
+#else
 	r4k_on_each_cpu(local_r4k_flush_cache_page, &args, 1, 1);
+#endif
 }
 
 static inline void local_r4k_flush_data_cache_page(void * addr)
 {
+	CACHE_ENTER(dpage);
 	r4k_blast_dcache_page((unsigned long) addr);
+	CACHE_EXIT(dpage);
 }
 
 static void r4k_flush_data_cache_page(unsigned long addr)
 {
+#ifdef BRCM_CMT_CACHE_WAR_0
+	local_r4k_flush_data_cache_page((void *) addr);
+#else
 	r4k_on_each_cpu(local_r4k_flush_data_cache_page, (void *) addr, 1, 1);
+#endif
 }
 
 struct flush_icache_range_args {
@@ -517,6 +872,7 @@ static inline void local_r4k_flush_icache_range(void *args)
 	struct flush_icache_range_args *fir_args = args;
 	unsigned long start = fir_args->start;
 	unsigned long end = fir_args->end;
+	CACHE_ENTER(irange);
 
 	if (!cpu_has_ic_fills_f_dc) {
 		if (end - start >= dcache_size) {
@@ -538,6 +894,7 @@ static inline void local_r4k_flush_icache_range(void *args)
 		r4k_blast_icache();
 	else
 		protected_blast_icache_range(start, end);
+	CACHE_EXIT(irange);
 }
 
 static void r4k_flush_icache_range(unsigned long start, unsigned long end)
@@ -547,8 +904,13 @@ static void r4k_flush_icache_range(unsigned long start, unsigned long end)
 	args.start = start;
 	args.end = end;
 
+#ifdef BRCM_CMT_CACHE_WAR_1
+	local_r4k_flush_icache_range(&args);
+#else
 	r4k_on_each_cpu(local_r4k_flush_icache_range, &args, 1, 1);
+#endif
 	instruction_hazard();
+
 }
 
 /*
@@ -569,6 +931,7 @@ static inline void local_r4k_flush_icache_page(void *args)
 	struct flush_icache_page_args *fip_args = args;
 	struct vm_area_struct *vma = fip_args->vma;
 	struct page *page = fip_args->page;
+	CACHE_ENTER(ipage);
 
 	/*
 	 * Tricky ...  Because we don't know the virtual address we've got the
@@ -584,6 +947,7 @@ static inline void local_r4k_flush_icache_page(void *args)
 		r4k_blast_scache_page(addr);
 		ClearPageDcacheDirty(page);
 
+		CACHE_EXIT(ipage);
 		return;
 	}
 
@@ -606,6 +970,7 @@ static inline void local_r4k_flush_icache_page(void *args)
 			drop_mmu_context(vma->vm_mm, cpu);
 	} else
 		r4k_blast_icache();
+	CACHE_EXIT(ipage);
 }
 
 static void r4k_flush_icache_page(struct vm_area_struct *vma,
@@ -623,7 +988,11 @@ static void r4k_flush_icache_page(struct vm_area_struct *vma,
 	args.vma = vma;
 	args.page = page;
 
+#ifdef BRCM_CMT_CACHE_WAR_1
+	local_r4k_flush_icache_page(&args);
+#else
 	r4k_on_each_cpu(local_r4k_flush_icache_page, &args, 1, 1);
+#endif
 }
 
 
@@ -631,6 +1000,7 @@ static void r4k_flush_icache_page(struct vm_area_struct *vma,
 
 static void r4k_dma_cache_wback_inv(unsigned long addr, unsigned long size)
 {
+	CACHE_ENTER(dmawb);
 	/* Catch bad driver code */
 	BUG_ON(size == 0);
 
@@ -639,6 +1009,7 @@ static void r4k_dma_cache_wback_inv(unsigned long addr, unsigned long size)
 			r4k_blast_scache();
 		else
 			blast_scache_range(addr, addr + size);
+		CACHE_EXIT(dmawb);
 		return;
 	}
 
@@ -655,10 +1026,13 @@ static void r4k_dma_cache_wback_inv(unsigned long addr, unsigned long size)
 	}
 
 	bc_wback_inv(addr, size);
+	BCM_LOCAL_EXTRA_CACHEOP_WAR;
+	CACHE_EXIT(dmawb);
 }
 
 static void r4k_dma_cache_inv(unsigned long addr, unsigned long size)
 {
+	CACHE_ENTER(dmainv);
 	/* Catch bad driver code */
 	BUG_ON(size == 0);
 
@@ -667,6 +1041,7 @@ static void r4k_dma_cache_inv(unsigned long addr, unsigned long size)
 			r4k_blast_scache();
 		else
 			blast_scache_range(addr, addr + size);
+		CACHE_EXIT(dmainv);
 		return;
 	}
 
@@ -677,7 +1052,14 @@ static void r4k_dma_cache_inv(unsigned long addr, unsigned long size)
 		blast_dcache_range(addr, addr + size);
 	}
 
+#if defined(CONFIG_MIPS_BCM7325)
+	bc_wback_inv(addr, size);
+#else
 	bc_inv(addr, size);
+#endif
+	
+	BCM_LOCAL_EXTRA_CACHEOP_WAR;
+	CACHE_EXIT(dmainv);
 }
 #endif /* CONFIG_DMA_NONCOHERENT */
 
@@ -692,6 +1074,7 @@ static void local_r4k_flush_cache_sigtramp(void * arg)
 	unsigned long dc_lsize = cpu_dcache_line_size();
 	unsigned long sc_lsize = cpu_scache_line_size();
 	unsigned long addr = (unsigned long) arg;
+	CACHE_ENTER(sigtramp);
 
 	R4600_HIT_CACHEOP_WAR_IMPL;
 	if (dc_lsize)
@@ -720,17 +1103,24 @@ static void local_r4k_flush_cache_sigtramp(void * arg)
 	}
 	if (MIPS_CACHE_SYNC_WAR)
 		__asm__ __volatile__ ("sync");
+	CACHE_EXIT(sigtramp);
 }
 
 static void r4k_flush_cache_sigtramp(unsigned long addr)
 {
+#ifdef BRCM_CMT_CACHE_WAR_1
+	local_r4k_flush_cache_sigtramp((void *) addr);
+#else
 	r4k_on_each_cpu(local_r4k_flush_cache_sigtramp, (void *) addr, 1, 1);
+#endif
 }
 
 static void r4k_flush_icache_all(void)
 {
+	CACHE_ENTER(iflush);
 	if (cpu_has_vtag_icache)
 		r4k_blast_icache();
+	CACHE_EXIT(iflush);
 }
 
 static inline void rm7k_erratum31(void)
@@ -1263,8 +1653,57 @@ void __init r4k_cache_init(void)
 	/* Default cache error handler for R4000 and R5000 family */
 	set_uncached_handler (0x100, &except_vec2_generic, 0x80);
 
+#ifdef CONFIG_MIPS_BRCM97XXX
+	{
+		extern void uart_puts(const char *);
+		extern int rac_setting(int);
+    		extern void cacheALibInit(void);
+
+#if defined(CONFIG_MIPS_BCM7320) || defined(CONFIG_MIPS_BCM7328) \
+	|| defined(CONFIG_MIPS_BCM7319) || defined(CONFIG_MIPS_BCM7440B0) \
+	|| defined (CONFIG_MIPS_BCM7443) ||  defined(CONFIG_MIPS_BCM7325) 
+		/* Do nothing for BRCM MIPS-5k, 24k */
+	printk("MTI Core cache probe\n");
+
+#else
+#define ICACHE_DCACHE_ENABLED 0xC0000000
+
+/* RYH  5/19/06 */
+        /* if ( strstr(cfeBootParms,"bcmrac") ) */
+		if( !rac_set )
+		{
+			rac_set = 1;
+			rac_setting(par_val);
+		}
+
+#if ! (defined(CONFIG_MIPS_BCM7325) || defined(CONFIG_MIPS_BCM7335) \
+	|| defined(CONFIG_MIPS_BCM7405) || defined (CONFIG_MIPS_BCM3548))
+		{
+		unsigned int reg;
+
+		/* Initialize and enable caches */
+	    	reg = read_c0_diag();
+    		if ( (reg& ICACHE_DCACHE_ENABLED) != ICACHE_DCACHE_ENABLED)
+	    	{
+    			uart_puts("$$$$$init cache \n");
+        		cacheALibInit();
+	        }
+       
+		reg = read_c0_diag();
+		write_c0_diag(reg | ICACHE_DCACHE_ENABLED);
+
+		}
+#endif	// !defined(CONFIG_MIPS_BCM7325)
+#endif	//  defined(CONFIG_MIPS_BCM7320) 
+	}
+#endif	//  CONFIG_MIPS_BRCM97XXX
+
 	probe_pcache();
 	setup_scache();
+
+	/* THT: Turn on cache aliasing check, nasty cache aliasing problems if not */
+	if (c->dcache.sets * c->dcache.ways > PAGE_SIZE)
+		c->dcache.flags |= MIPS_CACHE_ALIASES;
 
 	r4k_blast_dcache_page_setup();
 	r4k_blast_dcache_page_indexed_setup();

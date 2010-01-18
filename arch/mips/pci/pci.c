@@ -52,6 +52,10 @@ void
 pcibios_align_resource(void *data, struct resource *res,
 		       resource_size_t size, resource_size_t align)
 {
+#ifdef CONFIG_MIPS_BRCM97XXX
+/* This is very PC-centric */
+	return;
+#else
 	struct pci_dev *dev = data;
 	struct pci_controller *hose = dev->sysdata;
 	resource_size_t start = res->start;
@@ -73,6 +77,7 @@ pcibios_align_resource(void *data, struct resource *res,
 	}
 
 	res->start = start;
+#endif
 }
 
 void __init register_pci_controller(struct pci_controller *hose)

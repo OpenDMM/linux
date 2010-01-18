@@ -511,10 +511,24 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 	static char printk_buf[1024];
 	static int log_level_unknown = 1;
 
-	preempt_disable();
-	if (unlikely(oops_in_progress) && printk_cpu == smp_processor_id())
-		/* If a crash is occurring during printk() on this CPU,
-		 * make sure we can't deadlock */
+
+/************* THT: HACK HACK HACK Provide early printk *******************/
+	extern int brcm_console_initialized(void);
+	extern void uart_puts(const char *);
+	
+    if (/*1*/ !brcm_console_initialized() /**/) {
+	    /* This stops the holder of console_sem just where we want him */
+	    spin_lock_irqsave(&logbuf_lock, flags);
+        printed_len = vsprintf(printk_buf, fmt, args);
+        spin_unlock_irqrestore(&logbuf_lock, flags);
+        uart_puts(printk_buf);
+        
+        return printed_len;
+    }
+
+/************* END HACK END HACK END HACK **********************************/
+
+	if (unlikely(oops_in_progress))
 		zap_locks();
 
 	/* This stops the holder of console_sem just where we want him */

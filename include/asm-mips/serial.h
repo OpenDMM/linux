@@ -9,6 +9,7 @@
 #ifndef _ASM_SERIAL_H
 #define _ASM_SERIAL_H
 
+#include <asm/brcmstb/common/serial.h>
 
 /*
  * This assumes you have a 1.8432 MHz clock for your UART.
@@ -17,7 +18,9 @@
  * clock, since the 16550A is capable of handling a top speed of 1.5
  * megabits/second; but this requires the faster clock.
  */
+#ifndef BASE_BAUD
 #define BASE_BAUD (1843200 / 16)
+#endif
 
 /* Standard COM flags (except for COM4, because of the 8514 problem) */
 #ifdef CONFIG_SERIAL_DETECT_IRQ
@@ -27,6 +30,17 @@
 #define STD_COM_FLAGS (ASYNC_BOOT_AUTOCONF | ASYNC_SKIP_TEST)
 #define STD_COM4_FLAGS ASYNC_BOOT_AUTOCONF
 #endif
+
+#ifdef CONFIG_SERIAL_MANY_PORTS
+#define FOURPORT_FLAGS ASYNC_FOURPORT
+#define ACCENT_FLAGS 0
+#define BOCA_FLAGS 0
+#define HUB6_FLAGS 0
+#define RS_TABLE_SIZE	64
+#else
+#define RS_TABLE_SIZE
+#endif
+
 
 #ifdef CONFIG_MACH_JAZZ
 #include <asm/jazz.h>
@@ -49,6 +63,112 @@
 	_JAZZ_SERIAL_INIT(JAZZ_SERIAL2_IRQ, JAZZ_SERIAL2_BASE),
 #else
 #define JAZZ_SERIAL_PORT_DEFNS
+#endif
+
+#if defined(CONFIG_MIPS_BRCM97XXX) 
+
+#include <asm/brcmstb/common/serial.h>
+#include <linux/serial_core.h>
+
+/* 
+ * Legacy bcm3250 style UARTs 
+ */
+/* Added BCM93725 serial port defs 11-07-00 M. Steiger */
+#define _BRCM_SERIAL_INIT(int, base)					\
+	{ baud_base: BRCM_BASE_BAUD, irq: int, flags: STD_COM_FLAGS,	\
+	  xmit_fifo_size: 1, iomem_base: (u8 *) base,	\
+	  iomem_reg_shift: 0,			\
+	  io_type: SERIAL_IO_MEM }
+
+/*
+ * 16550A style UARTs
+ */
+
+#define _BRCM_16550_INIT(int, base)			\
+	{ baud_base:  ( BRCM_BASE_BAUD_16550 ),		\
+	  irq: int,								\
+	  flags: STD_COM_FLAGS|UPF_SPD_SHI,  /* 115200 */  \
+	  iomem_base: (u8 *) base,				\
+	  iomem_reg_shift: 2,					\
+	  io_type: SERIAL_IO_MEM /* 4 byte aligned */ \
+	}
+
+/* 3 or more 16550 UART on 7400 and 7118 and 7405 and above */
+#if defined(CONFIG_MIPS_BCM7400) || defined(CONFIG_MIPS_BCM7118) || defined(CONFIG_MIPS_BCM7405) \
+ || defined(CONFIG_MIPS_BCM7325) || defined(CONFIG_MIPS_BCM7335) || defined(CONFIG_MIPS_BCM7440B0) \
+ || defined(CONFIG_MIPS_BCM7443)
+
+
+
+#ifdef CONFIG_MIPS_BRCM_SIM
+/* 2 16550A compatible UARTs */
+#define BRCM_UART_PORT_DEFNS									\
+	_BRCM_16550_INIT(BRCM_SERIAL1_IRQ, BRCM_SERIAL1_BASE),		\
+	_BRCM_16550_INIT(BRCM_SERIAL2_IRQ, BRCM_SERIAL2_BASE),      	
+	
+#elif defined(CONFIG_MIPS_BCM7440B0) || defined(CONFIG_MIPS_BCM7443)
+/* 4 16550A compatible UARTs */
+#define BRCM_UART_PORT_DEFNS				\
+	_BRCM_16550_INIT(BRCM_SERIAL1_IRQ, BRCM_SERIAL1_BASE),		\
+	_BRCM_16550_INIT(BRCM_SERIAL2_IRQ, BRCM_SERIAL2_BASE),      \
+	_BRCM_16550_INIT(BRCM_SERIAL3_IRQ, BRCM_SERIAL3_BASE),      \
+	_BRCM_16550_INIT(BRCM_SERIAL4_IRQ, BRCM_SERIAL4_BASE),	
+
+#else
+/* 3 16550A compatible UARTs */
+#define BRCM_UART_PORT_DEFNS				\
+	_BRCM_16550_INIT(BRCM_SERIAL1_IRQ, BRCM_SERIAL1_BASE),		\
+	_BRCM_16550_INIT(BRCM_SERIAL2_IRQ, BRCM_SERIAL2_BASE),      \
+	_BRCM_16550_INIT(BRCM_SERIAL3_IRQ, BRCM_SERIAL3_BASE),	
+#endif
+
+#elif defined(CONFIG_MIPS_BCM7440A0) 
+// 7440A0 uses UARTB as default UART.  Hopefully this will be fixed in a later revision.
+#define BRCM_UART_PORT_DEFNS				\
+	_BRCM_16550_INIT(BRCM_SERIAL1_IRQ, BRCM_SERIAL1_BASE),      \
+	_BRCM_16550_INIT(BRCM_SERIAL2_IRQ, BRCM_SERIAL2_BASE),	
+	
+#elif defined(CONFIG_MIPS_BCM7401B0) || defined(CONFIG_MIPS_BCM7402) || \
+      defined(CONFIG_MIPS_BCM7401C0) || defined(CONFIG_MIPS_BCM7403A0)
+
+  /* 2 legacy bcm3250 UARTs +  1 16550A compatible UART */
+#define BRCM_SERIAL_PORT_DEFNS				\
+	_BRCM_SERIAL_INIT(BRCM_SERIAL1_IRQ, BRCM_SERIAL1_BASE), \
+
+#if 0 // UARTA is not used
+	_BRCM_SERIAL_INIT(BRCM_SERIAL0_IRQ, BRCM_SERIAL0_BASE),
+
+#endif
+
+#define BRCM_UART_PORT_DEFNS \
+	_BRCM_16550_INIT(BRCM_SERIAL2_IRQ, BRCM_SERIAL2_BASE), \
+
+
+#elif defined( CONFIG_MIPS_BCM7115 )
+#define BRCM_SERIAL_PORT_DEFNS						\
+	_BRCM_SERIAL_INIT(BRCM_SERIAL1_IRQ, BRCM_SERIAL1_BASE),		\
+	_BRCM_SERIAL_INIT(BRCM_SERIAL2_IRQ, BRCM_SERIAL2_BASE),		\
+	_BRCM_SERIAL_INIT(BRCM_SERIAL3_IRQ, BRCM_SERIAL3_BASE),		\
+	_BRCM_SERIAL_INIT(BRCM_SERIAL4_IRQ, BRCM_SERIAL4_BASE),
+	
+
+#else
+#define BRCM_SERIAL_PORT_DEFNS						\
+	_BRCM_SERIAL_INIT(BRCM_SERIAL1_IRQ, BRCM_SERIAL1_BASE),		\
+	_BRCM_SERIAL_INIT(BRCM_SERIAL2_IRQ, BRCM_SERIAL2_BASE),
+
+  
+#endif //#if various BRCM platforms
+#endif // #ifdef BRCM_97XXX
+
+#ifdef CONFIG_MIPS_COBALT
+#include <asm/cobalt/cobalt.h>
+#define COBALT_BASE_BAUD  (18432000 / 16)
+#define COBALT_SERIAL_PORT_DEFNS		\
+	/* UART CLK   PORT  IRQ  FLAGS    */ 		\
+	{ 0, COBALT_BASE_BAUD, 0xc800000, COBALT_SERIAL_IRQ, STD_COM_FLAGS },   /* ttyS0 */
+#else
+#define COBALT_SERIAL_PORT_DEFNS
 #endif
 
 /*
@@ -248,6 +368,8 @@
 	MOMENCO_OCELOT_G_SERIAL_PORT_DEFNS		\
 	MOMENCO_OCELOT_C_SERIAL_PORT_DEFNS		\
 	MOMENCO_OCELOT_SERIAL_PORT_DEFNS		\
-	MOMENCO_OCELOT_3_SERIAL_PORT_DEFNS
+	MOMENCO_OCELOT_3_SERIAL_PORT_DEFNS		\
+ 	BRCM_SERIAL_PORT_DEFNS	\
+      /*BRCM_UART_PORT_DEFNS */
 
 #endif /* _ASM_SERIAL_H */

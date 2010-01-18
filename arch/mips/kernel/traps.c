@@ -10,6 +10,8 @@
  * Kevin D. Kissell, kevink@mips.com and Carsten Langgaard, carstenl@mips.com
  * Copyright (C) 2000, 01 MIPS Technologies, Inc.
  * Copyright (C) 2002, 2003, 2004, 2005  Maciej W. Rozycki
+ *
+ * KGDB specific changes - Manish Lachwani (mlachwani@mvista.com)
  */
 #include <linux/init.h>
 #include <linux/mm.h>
@@ -20,8 +22,10 @@
 #include <linux/spinlock.h>
 #include <linux/kallsyms.h>
 #include <linux/bootmem.h>
+#include <linux/kgdb.h>
 #include <linux/interrupt.h>
 
+#include <asm/atomic.h>
 #include <asm/bootinfo.h>
 #include <asm/branch.h>
 #include <asm/break.h>
@@ -41,6 +45,7 @@
 #include <asm/mmu_context.h>
 #include <asm/watch.h>
 #include <asm/types.h>
+#include <asm/kdebug.h>
 
 extern asmlinkage void handle_int(void);
 extern asmlinkage void handle_tlbm(void);
@@ -73,6 +78,7 @@ void (*board_nmi_handler_setup)(void);
 void (*board_ejtag_handler_setup)(void);
 void (*board_bind_eic_interrupt)(int irq, int regset);
 
+atomic_t rdhwr_ctr = ATOMIC_INIT(0), brdhwr_ctr = ATOMIC_INIT(0);
 
 static void show_raw_backtrace(unsigned long reg29)
 {
@@ -124,6 +130,13 @@ static void show_backtrace(struct task_struct *task, struct pt_regs *regs)
 #else
 #define show_backtrace(task, r) show_raw_backtrace((r)->regs[29]);
 #endif
+
+ATOMIC_NOTIFIER_HEAD(mips_die_chain);
+
+int register_die_notifier(struct notifier_block *nb)
+{
+	return atomic_notifier_chain_register(&mips_die_chain, nb);
+}
 
 /*
  * This routine abuses get_user()/put_user() to reference pointers
@@ -453,9 +466,16 @@ static inline int get_insn_opcode(struct pt_regs *regs, unsigned int *opcode)
 #define LL     0xc0000000
 #define SC     0xe0000000
 #define SPEC3  0x7c000000
+#define BRDHWR 0xec000000
 #define RD     0x0000f800
 #define FUNC   0x0000003f
 #define RDHWR  0x0000003b
+
+/*
+ * mfc0 emulation
+ */
+
+#define MFC0   0x40000000
 
 /*
  * The ll_bit is cleared by r*_switch.S
@@ -600,22 +620,67 @@ static inline int simulate_rdhwr(struct pt_regs *regs)
 {
 	struct thread_info *ti = task_thread_info(current);
 	unsigned int opcode;
+	int rd, rt;
 
 	if (unlikely(get_insn_opcode(regs, &opcode)))
 		return -EFAULT;
 
 	if (unlikely(compute_return_epc(regs)))
 		return -EFAULT;
+	
+	rd = (opcode & RD) >> 11;
+	rt = (opcode & RT) >> 16;
 
+#if defined(CONFIG_MIPS_BRCM97XXX) && defined(_brcm_rdhwr)
+	/* PR34054: use alternate RDHWR instruction encoding */
+	if (((opcode & OPCODE) == BRDHWR && (opcode & FUNC) == RDHWR)
+	    || ((opcode & OPCODE) == SPEC3 && (opcode & FUNC) == RDHWR)) {
+#else
 	if ((opcode & OPCODE) == SPEC3 && (opcode & FUNC) == RDHWR) {
+#endif
 		int rd = (opcode & RD) >> 11;
 		int rt = (opcode & RT) >> 16;
+
+		if((opcode & OPCODE) == BRDHWR)
+			atomic_inc(&brdhwr_ctr);
+		else
+			atomic_inc(&rdhwr_ctr);
+
 		switch (rd) {
 			case 29:
 				regs->regs[rt] = ti->tp_value;
 				return 0;
 			default:
 				return -EFAULT;
+		}
+	}
+
+	/*
+	 * allow some CP0 registers to be read from user programs
+	 */
+
+#define CP0_OFF(reg, idx) (((reg) << 11) | (idx))
+#define EMU_MFC0(reg, idx) \
+	case CP0_OFF(reg, idx): \
+		regs->regs[rt] = __read_32bit_c0_register($ ## reg, idx); \
+		return(0)
+
+	if ((opcode & OPCODE) == MFC0) {
+		switch(opcode & OFFSET)
+		{
+			EMU_MFC0(15, 0);
+
+			EMU_MFC0(16, 0);
+			EMU_MFC0(16, 1);
+			EMU_MFC0(16, 7);
+
+			EMU_MFC0(22, 0);
+			EMU_MFC0(22, 1);
+			EMU_MFC0(22, 2);
+			EMU_MFC0(22, 3);
+			EMU_MFC0(22, 4);
+			EMU_MFC0(22, 5);
+			EMU_MFC0(22, 6);
 		}
 	}
 
@@ -1107,7 +1172,12 @@ void nmi_exception_handler(struct pt_regs *regs)
 
 #define VECTORSPACING 0x100	/* for EI/VI mode */
 
+#ifdef CONFIG_DISCONTIGMEM
+/* this is not set up yet because we called tlb_init() early */
+unsigned long ebase = CAC_BASE;
+#else
 unsigned long ebase;
+#endif
 unsigned long exception_handlers[32];
 unsigned long vi_handlers[64];
 
@@ -1433,11 +1503,27 @@ void __init per_cpu_trap_init(void)
 	enter_lazy_tlb(&init_mm, current);
 
 #ifdef CONFIG_MIPS_MT_SMTC
-	if (bootTC) {
+	if (bootTC)
 #endif /* CONFIG_MIPS_MT_SMTC */
+#ifdef CONFIG_DISCONTIGMEM
+	/*
+	 * on DISCONTIGMEM, these are done in setup_arch() on TP0 in order
+	 * to create the extra kernel mappings for upper memory
+	 */
+	if(smp_processor_id() != 0)
+#endif
+	{
 		cpu_cache_init();
 		tlb_init();
+	}
 #ifdef CONFIG_MIPS_MT_SMTC
+	else if (!secondaryTC) {
+		/*
+		 * First TC in non-boot VPE must do subset of tlb_init()
+		 * for MMU countrol registers.
+		 */
+		write_c0_pagemask(PM_DEFAULT_MASK);
+		write_c0_wired(0);
 	}
 #endif /* CONFIG_MIPS_MT_SMTC */
 }
@@ -1467,6 +1553,11 @@ void __init trap_init(void)
 	extern char except_vec3_generic, except_vec3_r4000;
 	extern char except_vec4;
 	unsigned long i;
+
+#if defined(CONFIG_KGDB)
+	if (kgdb_early_setup)
+		return;	/* Already done */
+#endif
 
 	if (cpu_has_veic || cpu_has_vint)
 		ebase = (unsigned long) alloc_bootmem_low_pages (0x200 + VECTORSPACING*64);

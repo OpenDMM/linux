@@ -17,7 +17,17 @@
  */
 
 #include <linux/module.h>
+
+#ifdef CONFIG_USB_BRCM
+  #define EHCI_BRCM
+
+#if defined(CONFIG_PCI) && defined(CONFIG_SWAP_IO_SPACE_L)
+#undef CONFIG_SWAP_IO_SPACE_L
+#endif
+
+#else
 #include <linux/pci.h>
+#endif
 #include <linux/dmapool.h>
 #include <linux/kernel.h>
 #include <linux/delay.h>
@@ -129,6 +139,10 @@ MODULE_PARM_DESC (park, "park setting; 1-3 back-to-back async packets");
 #define	INTR_MASK (STS_IAA | STS_FATAL | STS_PCD | STS_ERR | STS_INT)
 
 /*-------------------------------------------------------------------------*/
+
+#ifdef CONFIG_USB_BRCM
+#include "brcmusb.h"
+#endif
 
 #include "ehci.h"
 #include "ehci-dbg.c"
@@ -902,9 +916,14 @@ MODULE_LICENSE ("GPL");
 #define	PLATFORM_DRIVER		ehci_hcd_au1xxx_driver
 #endif
 
+#ifdef CONFIG_USB_BRCM
+#include "ehci-brcm.c"
+#else
+
 #if !defined(PCI_DRIVER) && !defined(PLATFORM_DRIVER)
 #error "missing bus glue for ehci-hcd"
 #endif
+
 
 static int __init ehci_hcd_init(void)
 {
@@ -916,7 +935,9 @@ static int __init ehci_hcd_init(void)
 		 sizeof(struct ehci_itd), sizeof(struct ehci_sitd));
 
 #ifdef PLATFORM_DRIVER
+#ifndef CONFIG_USB_BRCM
 	retval = platform_driver_register(&PLATFORM_DRIVER);
+#endif
 	if (retval < 0)
 		return retval;
 #endif
@@ -945,3 +966,4 @@ static void __exit ehci_hcd_cleanup(void)
 }
 module_exit(ehci_hcd_cleanup);
 
+#endif // CONFIG_BRCM

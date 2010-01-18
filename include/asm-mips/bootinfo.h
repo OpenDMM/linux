@@ -220,6 +220,12 @@
 #define  MACH_TITAN_EXCITE	2	/* Basler eXcite		*/
 
 /*
+ * Valid machtypes from group BRCM
+ */
+#define MACH_GROUP_BRCM        23	/* Broadcom STBs */
+#define  MACH_BRCM_STB		0
+
+/*
  * Valid machtype for group NEC EMMA2RH
  */
 #define MACH_GROUP_NEC_EMMA2RH 25	/* NEC EMMA2RH (was 23)		*/

@@ -639,7 +639,8 @@ static unsigned long zap_pte_range(struct mmu_gather *tlb,
 		if (pte_present(ptent)) {
 			struct page *page;
 
-			page = vm_normal_page(vma, addr, ptent);
+			page = (vma->vm_flags & VM_BRCMRSVD) ? NULL :
+				vm_normal_page(vma, addr, ptent);
 			if (unlikely(details) && page) {
 				/*
 				 * unmap_shared_mapping_pages() wants to
@@ -1362,7 +1363,28 @@ int remap_pfn_range(struct vm_area_struct *vma, unsigned long addr,
 		vma->vm_pgoff = pfn;
 	}
 
+#ifndef CONFIG_MIPS_BRCM97XXX
+	/*
+	 * Physically remapped pages are special. Tell the
+	 * rest of the world about it:
+	 *   VM_IO tells people not to look at these pages
+	 *	(accesses can have side effects).
+	 *   VM_RESERVED tells swapout not to try to touch
+	 *	this region.
+	 */
 	vma->vm_flags |= VM_IO | VM_RESERVED | VM_PFNMAP;
+#else
+	/* 
+	 * THT 9/21/05: PR17241: Turning VM_IO on would prevent Direct-IO 
+	 * from mmap()ing the pages, so only do this for pages beyond
+	 * real memory
+	 */
+	vma->vm_flags |= VM_RESERVED | VM_BRCMRSVD;
+
+	if (pfn >= (((unsigned long) __pa((unsigned long) high_memory)) >> PAGE_SHIFT))
+		vma->vm_flags |= VM_IO;
+ 
+#endif
 
 	BUG_ON(addr >= end);
 	pfn -= addr >> PAGE_SHIFT;

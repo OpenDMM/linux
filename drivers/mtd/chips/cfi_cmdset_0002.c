@@ -166,6 +166,59 @@ static void fixup_use_write_buffers(struct mtd_info *mtd, void *param)
 	}
 }
 
+#if defined(CONFIG_MIPS_BCM7400A0)
+static void fixup_S29GLxxxN_use_write_words(struct mtd_info *mtd, void *param)
+{
+	struct map_info *map = mtd->priv;
+	struct cfi_private *cfi = map->fldrv_priv;
+	int is_S29GLxxxN_chip = 0;
+	__u32 base = 0; /* Interleave, we have only 1 chip */
+	int id, id1, id2;
+
+	/* Read the chip ID of the board, using the CFI->id field is not enough */
+	cfi_send_gen_cmd(0xf0,     0, base, map, cfi, cfi->device_type, NULL);
+	cfi_send_gen_cmd(0xaa, 0x555, base, map, cfi, cfi->device_type, NULL);
+	cfi_send_gen_cmd(0x55, 0x2aa, base, map, cfi, cfi->device_type, NULL);
+	cfi_send_gen_cmd(0x90, 0x555, base, map, cfi, cfi->device_type, NULL);
+	
+	id = cfi_read_query(map, base + 0x02); 
+	id1 = cfi_read_query(map, base + 0x1c);
+	id2 = cfi_read_query(map, base + 0x1e);
+
+	/* Put it back into Read Mode */
+	cfi_send_gen_cmd(0xF0, 0, base, map, cfi, cfi->device_type, NULL);
+	/* ... even if it's an Intel chip */
+	cfi_send_gen_cmd(0xFF, 0, base, map, cfi, cfi->device_type, NULL);
+
+	printk(KERN_INFO "flash chip id=%x, id1=%x, id2=%x\n", id, id1, id2);
+
+	if (id == 0x227E || id == 0x7e) {
+		if ((id1 == 0x2223 || id1 == 0x23) && (id2 == 0x2201 || id2 == 0x01)) // S29GL512N
+			is_S29GLxxxN_chip = 1;
+		else if ((id1 == 0x2222 || id1 == 0x22) && (id2 == 0x2201 || id2 == 0x01)) // S29GL256N
+			is_S29GLxxxN_chip = 1;
+		else if ((id1 == 0x2221 || id1 == 0x21) && (id2 == 0x2201 || id2 == 0x01)) // S29GL256N
+			is_S29GLxxxN_chip = 1;
+	}
+	
+	if (is_S29GLxxxN_chip) {
+		printk(KERN_INFO "Disabling write buffers for S29GLxxxN\n");
+		mtd->write = cfi_amdstd_write_words;
+	}
+#ifdef  CONFIG_MIPS_BCM7118A0
+        /*
+         * unconditionally enable workaround on 7118a0, because chip probe
+         * might not reliably detect the flash mfr/id
+         */
+        else {
+                printk(KERN_INFO "On 7118A0, disabling write buffers for S29GLxxxN\n");
+                mtd->write = cfi_amdstd_write_words;
+        }
+#endif
+
+}
+#endif
+
 /* Atmel chips don't use the same PRI format as AMD chips */
 static void fixup_convert_atmel_pri(struct mtd_info *mtd, void *param)
 {
@@ -197,6 +250,10 @@ static void fixup_use_erase_chip(struct mtd_info *mtd, void *param)
 {
 	struct map_info *map = mtd->priv;
 	struct cfi_private *cfi = map->fldrv_priv;
+	
+	printk(KERN_NOTICE "fixup_use_erase_chip\n");
+	
+	
 	if ((cfi->cfiq->NumEraseRegions == 1) &&
 		((cfi->cfiq->EraseRegionInfo[0] & 0xffff) == 0)) {
 		mtd->erase = cfi_amdstd_erase_chip;
@@ -226,6 +283,17 @@ static struct cfi_fixup cfi_fixup_table[] = {
 	{ CFI_MFR_AMD, 0x005F, fixup_use_secsi, NULL, },
 #if !FORCE_WORD_WRITE
 	{ CFI_MFR_ANY, CFI_ID_ANY, fixup_use_write_buffers, NULL, },
+#if defined(CONFIG_MIPS_BCM7400A0)
+	/*
+         * THT: PR22727: Disable write buffers for S29GLxxxN.
+	 * Placing this after the previous entry will override it.
+         * This affects 7400a0, 7118a0, possibly others - but not 7400d0.
+         *
+         * NOTE: In x16 mode the id will be read as 0x227e.
+	 */
+	{ MANUFACTURER_AMD, 0x007e, fixup_S29GLxxxN_use_write_words, NULL, },
+	{ MANUFACTURER_AMD, 0x227e, fixup_S29GLxxxN_use_write_words, NULL, },
+#endif
 #endif
 	{ CFI_MFR_ATMEL, CFI_ID_ANY, fixup_convert_atmel_pri, NULL },
 	{ 0, 0, NULL, NULL }

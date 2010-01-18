@@ -23,8 +23,19 @@
 #include <asm/page.h>
 #include <asm/mipsregs.h>
 #include <asm/stackframe.h>
-
+#include <asm/brcmstb/common/brcmstb.h>
 #include <kernel-entry-init.h>
+
+#ifdef CONFIG_BRCM_PCI_SLAVE
+#define UART_ADR_BASE					(0xb0000000 | BCHP_UARTB_RCVSTAT)
+
+#define BAUD_VAL(x)     				(((XTALFREQ/8/(x) + 1)/2) - 1)
+#define BAUD_VAL_LO(x)  				(BAUD_VAL(x) & 0xff)
+#define BAUD_VAL_HI(x)  				((BAUD_VAL(x) >> 8) & 0xff)
+
+#define BAUD_115200_LO  				BAUD_VAL_LO(115200)
+#define BAUD_115200_HI  				BAUD_VAL_HI(115200)
+#endif
 
 	.macro	ARC64_TWIDDLE_PC
 #if defined(CONFIG_ARC64) || defined(CONFIG_MAPPED_KERNEL)
@@ -138,7 +149,8 @@
 EXPORT(stext)					# used for profiling
 EXPORT(_stext)
 
-#if defined(CONFIG_QEMU) || defined(CONFIG_MIPS_SIM)
+#if defined(CONFIG_QEMU) || defined(CONFIG_MIPS_SIM) || \
+	defined(CONFIG_MIPS_BRCM_IKOS)
 	/*
 	 * Give us a fighting chance of running if execution beings at the
 	 * kernel load address.  This is needed because this platform does
@@ -146,7 +158,12 @@ EXPORT(_stext)
 	 */
 	j	kernel_entry
 #endif
+// For PCI slave hosts, kernel_entry must coincide with load address,
+// since it is now the boot vector.
+#if !defined( CONFIG_QEMU ) && !defined (CONFIG_BRCM_PCI_SLAVE)
+
 	__INIT
+#endif
 
 NESTED(kernel_entry, 16, sp)			# kernel entry point
 
@@ -197,7 +214,7 @@ NESTED(kernel_entry, 16, sp)			# kernel entry point
 	j		start_kernel
 	END(kernel_entry)
 
-#ifdef CONFIG_QEMU
+#if defined( CONFIG_QEMU ) || defined (CONFIG_BRCM_PCI_SLAVE)
 	__INIT
 #endif
 
@@ -253,3 +270,10 @@ NESTED(smp_bootstrap, 16, sp)
 	page	invalid_pmd_table, _PMD_ORDER
 #endif
 	page	invalid_pte_table, _PTE_ORDER
+
+
+#ifdef CONFIG_BRCM_PCI_SLAVE
+#include "../brcmstb/common/reset.S"
+#include "../brcmstb/common/cacheALib.S"
+#endif
+

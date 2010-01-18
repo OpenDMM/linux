@@ -138,7 +138,14 @@ static inline void __ide_insw(unsigned long port, void *addr,
 	unsigned int count)
 {
 	__ide_flush_prologue();
+#if defined( CONFIG_BLK_DEV_IDE_BCM7XXX ) && defined( __MIPSEB__ )
+	extern void bcm71xx_insw(unsigned long port, void *addr,
+		unsigned int count);
+
+	bcm71xx_insw(port, addr, count);
+#else
 	insw(port, addr, count);
+#endif
 	__ide_flush_dcache_range((unsigned long)addr, count * 2);
 	__ide_flush_epilogue();
 }
@@ -146,7 +153,14 @@ static inline void __ide_insw(unsigned long port, void *addr,
 static inline void __ide_insl(unsigned long port, void *addr, unsigned int count)
 {
 	__ide_flush_prologue();
+#if defined( CONFIG_BLK_DEV_IDE_BCM7XXX ) && defined( __MIPSEB__ )
+	extern void bcm71xx_insl(unsigned long port, void *addr,
+		unsigned int count);
+
+	bcm71xx_insl(port, addr, count);
+#else
 	insl(port, addr, count);
+#endif
 	__ide_flush_dcache_range((unsigned long)addr, count * 4);
 	__ide_flush_epilogue();
 }
@@ -155,7 +169,15 @@ static inline void __ide_outsw(unsigned long port, const void *addr,
 	unsigned long count)
 {
 	__ide_flush_prologue();
+#if defined( CONFIG_BLK_DEV_IDE_BCM7XXX ) && defined( __MIPSEB__ )
+	extern void bcm71xx_outsw(unsigned long port, const void *addr,
+		unsigned int count);
+
+
+	bcm71xx_outsw(port, addr, count);
+#else
 	outsw(port, addr, count);
+#endif
 	__ide_flush_dcache_range((unsigned long)addr, count * 2);
 	__ide_flush_epilogue();
 }
@@ -164,7 +186,14 @@ static inline void __ide_outsl(unsigned long port, const void *addr,
 	unsigned long count)
 {
 	__ide_flush_prologue();
+#if defined( CONFIG_BLK_DEV_IDE_BCM7XXX ) && defined( __MIPSEB__ )
+	extern void bcm71xx_outsl(unsigned long port, const void *addr,
+		unsigned int count);
+
+	bcm71xx_outsl(port, addr, count);
+#else
 	outsl(port, addr, count);
+#endif
 	__ide_flush_dcache_range((unsigned long)addr, count * 4);
 	__ide_flush_epilogue();
 }

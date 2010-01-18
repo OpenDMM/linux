@@ -1,7 +1,7 @@
 VERSION = 2
 PATCHLEVEL = 6
 SUBLEVEL = 18
-EXTRAVERSION = .8
+EXTRAVERSION =-5.0
 NAME=Avast! A bilge rat!
 
 # *DOCUMENTATION*
@@ -952,7 +952,7 @@ _modinst_:
 ifeq "$(strip $(INSTALL_MOD_PATH))" ""
 depmod_opts	:=
 else
-depmod_opts	:= -b $(INSTALL_MOD_PATH) -r
+depmod_opts	:= -b $(INSTALL_MOD_PATH)
 endif
 PHONY += _modinst_post
 _modinst_post: _modinst_
@@ -990,6 +990,7 @@ MRPROPER_DIRS  += include/config include2 usr/include
 MRPROPER_FILES += .config .config.old include/asm .version .old_version \
                   include/linux/autoconf.h include/linux/version.h      \
                   include/linux/utsrelease.h                            \
+		  include/linux/dwarf2-defs.h				\
 		  Module.symvers tags TAGS cscope*
 
 # clean - Delete most, but leave enough to build external modules
@@ -1420,7 +1421,11 @@ clean := -f $(if $(KBUILD_SRC),$(srctree)/)scripts/Makefile.clean obj
 endif	# skip-makefile
 
 PHONY += FORCE
-FORCE:
+include/linux/dwarf2-defs.h: $(srctree)/include/linux/dwarf2.h $(srctree)/scripts/dwarfh.awk
+	mkdir -p include/linux/
+	awk -f $(srctree)/scripts/dwarfh.awk $(srctree)/include/linux/dwarf2.h > include/linux/dwarf2-defs.h
+
+FORCE: include/linux/dwarf2-defs.h
 
 
 # Declare the contents of the .PHONY variable as phony.  We keep that
