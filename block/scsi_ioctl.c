@@ -297,6 +297,7 @@ static int cdb_xfer_len(unsigned char *cdb, unsigned int sector_size)
 	case GPCMD_SEND_DVD_STRUCTURE:
 	case GPCMD_SEND_EVENT:
 	case GPCMD_SEND_KEY:
+	case 0xAC: /* PERFORM_NOTIFICATION */
 		xfer_len = (cdb[8] << 8) | cdb[9];
 		break;
 	case GPCMD_SET_STREAMING:
