@@ -2833,8 +2833,8 @@ static inline int __ata_scsi_queuecmd(struct scsi_cmnd *cmd,
 	if ((dev->class == ATA_DEV_ATAPI) && (cmd->request_bufflen & 0x03)) {
 		printk(KERN_WARNING "%s: ODD REQUEST BYTE COUNT TRAPPED (0x%x bytes)\n", __FUNCTION__, cmd->request_bufflen);
 		scsi_print_command(cmd);
-		dump_stack();
-		return 0;
+//		dump_stack();
+//		return 0;
 	}
 #endif // CONFIG_MIPS_BCM_NDVD
 
