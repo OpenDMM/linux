@@ -166,6 +166,7 @@ typedef struct brcmnand_chip_Id {
 	uint32 options;
 	uint32_t idOptions;	// Whether chip has all 5 ID bytes
 	uint32 timing1, timing2; // Specify a non-zero value to override the default timings.
+	int nop;				// Number of partial writes per page
 	unsigned int ctrlVersion; // Required controller version if different than 0
 } brcmnand_chip_Id;
 
@@ -182,6 +183,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 				//| NAND_COMPLEX_OOB_WRITE	/* Write data together with OOB for write_oob */
 		.timing1 = 0, //00070000,
 		.timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0, /* THT Verified on data-sheet 7/10/08: Allows 4 on main and 4 on OOB */
 	},
 
@@ -193,6 +195,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.idOptions = 0,
 		.timing1 = 0, //0x6474555f, 
 		.timing2 = 0, //0x00000fc7,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 	{	/* 2 */
@@ -203,6 +206,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.idOptions = 0,
 		.timing1 = 0, //0x6474555f, 
 		.timing2 = 0, //0x00000fc7,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 #if 0 // EOL
@@ -224,6 +228,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -234,6 +239,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 /* This is just the 16 bit version of the above?
@@ -253,6 +259,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=4,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
 	},
 
@@ -263,6 +270,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=4,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
 	},
 
@@ -274,6 +282,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -286,6 +295,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -296,6 +306,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -306,6 +317,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -316,6 +328,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -326,6 +339,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -336,6 +350,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -346,6 +361,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -356,6 +372,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -366,6 +383,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -376,6 +394,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -386,6 +405,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -396,6 +416,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -406,6 +427,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -416,6 +438,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=8,
 		.ctrlVersion = 0,
 	},
 
@@ -427,6 +450,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=4,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
 	},
 
@@ -437,6 +461,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=4,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
 	},
 
@@ -447,6 +472,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=4,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
 	},
 	{	/* 25 */ 
@@ -456,6 +482,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=4,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
 	},
 	
@@ -466,6 +493,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=4,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
 	},
 	{	/* 27 */ 
@@ -475,6 +503,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.options = NAND_USE_FLASH_BBT,
 		.idOptions = 0,
 		.timing1 = 0, .timing2 = 0,
+		.nop=4,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
 	},
 		
@@ -487,6 +516,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.idOptions = BRCMNAND_ID_EXT_BYTES,
 		.timing1 = 0, 
 		.timing2 = 0,
+		.nop=1,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_3_0, 
 	},
 
@@ -499,6 +529,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.idOptions = BRCMNAND_ID_EXT_BYTES_TYPE2,
 		.timing1 = 0, 
 		.timing2 = 0,
+		.nop=1,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_3_0, 
 	},
 
@@ -511,6 +542,20 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.idOptions = BRCMNAND_ID_EXT_BYTES,
 		.timing1 = 0, 
 		.timing2 = 0,
+		.nop=1,
+		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_3_0, 
+	},
+
+	{	/* 31 */  
+		.chipId = HYNIX_HY27UAG8T2M,
+		.mafId = FLASHTYPE_HYNIX,
+		.chipIdStr = "HYNIX_HY27UAG8T2M",
+		.options = NAND_USE_FLASH_BBT, 		/* Use BBT on flash */
+				//| NAND_COMPLEX_OOB_WRITE	/* Write data together with OOB for write_oob */
+		.idOptions = BRCMNAND_ID_EXT_BYTES,
+		.timing1 = 0, 
+		.timing2 = 0,
+		.nop=1,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_3_0, 
 	},
 
@@ -636,13 +681,14 @@ static uint32_t brcmnand_ctrl_writeAddr(struct brcmnand_chip* chip, loff_t offse
 	}
 
 if (gdebug) printk("CS=%d, chip->CS[cs]=%d\n", cs, chip->CS[cs]);
-	// ldw is lower 32 bit of chipOffset, need to add pbase when on CS0
-	if (chip->CS[cs] == 0) {
+	// ldw is lower 32 bit of chipOffset, need to add pbase when on CS0 and XOR is ON.
+	if (!chip->xor_disable[cs]) {
 		ldw = chipOffset.s.low + chip->pbase;
-	}
+	} 
 	else {
 		ldw = chipOffset.s.low;
-	}
+	} 
+	
 	udw = chipOffset.s.high | (chip->CS[cs] << 16);
 
 if (gdebug > 3) printk("%s: offset=%0llx  cs=%d ldw = %08x, udw = %08x\n", __FUNCTION__, offset, cs,  ldw, udw);
@@ -4575,11 +4621,20 @@ printk("-->%s, offset=%0llx, len=%08x\n", __FUNCTION__, from, len);}
 		if (likely(chip->cet)) {
 			if (likely(chip->cet->flags != BRCMNAND_CET_DISABLED)) {
 				if (brcmnand_cet_update(mtd, from, &status) == 0) {
+
+/*
+ * PR57272: Provide workaround for BCH-n ECC HW bug when # error bits >= 4 
+ * We will not mark a block bad when the a correctable error already happened on the same page
+ */
+#if CONFIG_MTD_BRCMNAND_VERSION <= CONFIG_MTD_BRCMNAND_VERS_3_4
+					ret = 0;
+#else
 					if (status) {
 						ret = -EUCLEAN;
 					} else {
 						ret = 0;
 					}
+#endif
 				}
 				if (gdebug > 3) {
 					printk(KERN_INFO "DEBUG -> %s ret = %d, status = %d\n", __FUNCTION__, ret, status);
@@ -7575,51 +7630,92 @@ PRINTK("gNumNand=%d, cs=%d\n", gNumNand, cs);
 	}
 	
 #elif CONFIG_MTD_BRCMNAND_VERSION >= CONFIG_MTD_BRCMNAND_VERS_2_0
-  	/* 
-  	 * Starting with version 2.0 (bcm7325 and later), 
-  	 * we can use EBI_CS_USES_NAND  Registers to find out where the NAND
-  	 * chips are (which CS) 
-  	 */
-  	if (gNumNand > 0) { /* Kernel argument nandcs=<comma-sep-list> override CFE settings */
-		if (brcmnand_sort_chipSelects(mtd, maxchips, gNandCS, chip->CS))
-			return (-EINVAL);
-		cs = chip->CS[chip->numchips - 1];
-PRINTK("gNumNand=%d, cs=%d\n", gNumNand, cs);
-  	}
-	else {
+	{
+		int i;
+		uint32_t nand_xor;
 		
-		/* Load the gNandCS_priv[] array from EBI_CS_USES_NAND values,
-		 * same way that get_options() does, i.e. first entry is gNumNand
-		 */
-		int nandCsShift, i;
-		int numNand = 0;
-		int nandCS[MAX_NAND_CS];
+	  	/* 
+	  	 * Starting with version 2.0 (bcm7325 and later), 
+	  	 * we can use EBI_CS_USES_NAND  Registers to find out where the NAND
+	  	 * chips are (which CS) 
+	  	 */
 
-		for (i = 0; i< MAX_NAND_CS; i++) {
-			nandCS[i] = -1;
+
+	  	if (gNumNand > 0) { /* Kernel argument nandcs=<comma-sep-list> override CFE settings */
+			if (brcmnand_sort_chipSelects(mtd, maxchips, gNandCS, chip->CS))
+				return (-EINVAL);
+			cs = chip->CS[chip->numchips - 1];
+	PRINTK("gNumNand=%d, cs=%d\n", gNumNand, cs);
+	  	}
+		else {
+			
+			/* Load the gNandCS_priv[] array from EBI_CS_USES_NAND values,
+			 * same way that get_options() does, i.e. first entry is gNumNand
+			 */
+			int nandCsShift;
+			int numNand = 0; // Number of NAND chips
+			int nandCS[MAX_NAND_CS];
+
+			for (i = 0; i< MAX_NAND_CS; i++) {
+				nandCS[i] = -1;
+			}
+			
+			nand_select = brcmnand_ctrl_read(BCHP_NAND_CS_NAND_SELECT);
+			// Be careful here, the last bound depends on chips.  Some chips allow 8 CS'es (3548a0) some only 2 (3548b0)
+			// Here we rely on BCHP_NAND_CS_NAND_SELECT_reserved1_SHIFT being the next bit.
+			for (i=0, nandCsShift = BCHP_NAND_CS_NAND_SELECT_EBI_CS_0_USES_NAND_SHIFT;
+				nandCsShift < BCHP_NAND_CS_NAND_SELECT_reserved1_SHIFT;
+				nandCsShift ++)
+			{
+				if (nand_select & (1 << nandCsShift)) {
+					nandCS[i] = nandCsShift - BCHP_NAND_CS_NAND_SELECT_EBI_CS_0_USES_NAND_SHIFT;
+					PRINTK("Found NAND on CS%1d\n", nandCS[i]);
+					i++;
+				}
+			}
+			numNand = i;
+			if (brcmnand_sort_chipSelects(mtd, maxchips, nandCS, chip->CS))
+				return (-EINVAL);
+			cs = chip->CS[chip->numchips - 1];
+	PRINTK("gNumNand=%d, cs=%d\n", gNumNand, cs);
+
+				
+
+			
+
 		}
-		
-		nand_select = brcmnand_ctrl_read(BCHP_NAND_CS_NAND_SELECT);
-		// Be careful here, the last bound depends on chips.  Some chips allow 8 CS'es (3548a0) some only 2 (3548b0)
-		// Here we rely on BCHP_NAND_CS_NAND_SELECT_reserved1_SHIFT being the next bit.
-		for (i=0, nandCsShift = BCHP_NAND_CS_NAND_SELECT_EBI_CS_0_USES_NAND_SHIFT;
-			nandCsShift < BCHP_NAND_CS_NAND_SELECT_reserved1_SHIFT;
-			nandCsShift ++)
-		{
-			if (nand_select & (1 << nandCsShift)) {
-				nandCS[i] = nandCsShift - BCHP_NAND_CS_NAND_SELECT_EBI_CS_0_USES_NAND_SHIFT;
-				PRINTK("Found NAND on CS%1d\n", nandCS[i]);
-				i++;
+
+		/*
+		 * 2618-7.3: For v2.0 or later, set xor_disable according to NAND_CS_NAND_XOR:00 bit
+		 */	
+
+		nand_xor = brcmnand_ctrl_read(BCHP_NAND_CS_NAND_XOR);
+		printk("NAND_CS_NAND_XOR=%08x\n", nand_xor);
+		//
+#ifdef CONFIG_MTD_BRCMNAND_DISABLE_XOR
+	/* Testing 1,2,3: Force XOR disable on CS0, if not done by CFE */
+		if (chip->CS[0] == 0) {	
+			printk("Disabling XOR: Before: SEL=%08x, XOR=%08x\n", nand_select, nand_xor);
+			
+			nand_select &= ~BCHP_NAND_CS_NAND_SELECT_EBI_CS_0_SEL_MASK;
+			nand_xor &= ~BCHP_NAND_CS_NAND_XOR_EBI_CS_0_ADDR_1FC0_XOR_MASK;
+
+			brcmnand_ctrl_write(BCHP_NAND_CS_NAND_SELECT, nand_select);
+			brcmnand_ctrl_write(BCHP_NAND_CS_NAND_XOR, nand_xor);
+
+			printk("Disabling XOR: After: SEL=%08x, XOR=%08x\n", nand_select, nand_xor);
+		}
+#endif
+		/* Translate nand_xor into our internal flag, for brcmnand_writeAddr */
+		for (i=0; i<chip->numchips; i++) {
+						
+			/* Set xor_disable, 1 for each NAND chip */
+			if (!(nand_xor & (BCHP_NAND_CS_NAND_XOR_EBI_CS_0_ADDR_1FC0_XOR_MASK<<i))) {
+printk("Disabling XOR on CS#%1d\n", chip->CS[i]);
+				chip->xor_disable[i] = 1;
 			}
 		}
-		numNand = i;
-		if (brcmnand_sort_chipSelects(mtd, maxchips, nandCS, chip->CS))
-			return (-EINVAL);
-		cs = chip->CS[chip->numchips - 1];
-PRINTK("gNumNand=%d, cs=%d\n", gNumNand, cs);
 	}
-
-  
 #else
 	#error "Unknown Broadcom NAND controller version"
 #endif /* Versions >= 1.0 */
@@ -7940,6 +8036,27 @@ printk("Corrected ECC to Hamming for SLC flashes: ACC_CONTROL = %08lx from %08lx
 		}
 
 
+#if CONFIG_MTD_BRCMNAND_VERSION <= CONFIG_MTD_BRCMNAND_VERS_3_4
+		/*
+		 * PR57272: Workaround for BCH-n error, 
+		 * reporting correctable errors with 4 or more bits as uncorrectable:
+		 */
+		if (chip->ecclevel != 0 && chip->ecclevel != BRCMNAND_ECC_HAMMING) {
+			int corr_threshold;
+
+			if ( chip->ecclevel >=  BRCMNAND_ECC_BCH_4) {
+				corr_threshold = 2;
+			} 
+			else {
+				corr_threshold = 1;  // 1 , default for Hamming
+			}
+
+			printk(KERN_INFO "%s: CORR ERR threshold set to %d bits\n", __FUNCTION__, corr_threshold);
+			corr_threshold <<= BCHP_NAND_CORR_STAT_THRESHOLD_CORR_STAT_THRESHOLD_SHIFT;
+			brcmnand_ctrl_write(BCHP_NAND_CORR_STAT_THRESHOLD, corr_threshold);
+		}
+
+#else
 		/*
 		 * If ECC level is BCH, set CORR Threshold according to # bits corrected
 		 */
@@ -7959,6 +8076,7 @@ printk("Corrected ECC to Hamming for SLC flashes: ACC_CONTROL = %08lx from %08lx
 			corr_threshold <<= BCHP_NAND_CORR_STAT_THRESHOLD_CORR_STAT_THRESHOLD_SHIFT;
 			brcmnand_ctrl_write(BCHP_NAND_CORR_STAT_THRESHOLD, corr_threshold);
 		}
+#endif
 			
 	}
 
@@ -8106,8 +8224,22 @@ printk("ECC layout=%s\n", "brcmnand_oob_bch4_2k");
 				}
 			}
 			else {
-				printk(KERN_ERR "Unsupported SLC NAND with page size of %d\n", mtd->writesize);
-				BUG();
+				switch (mtd->writesize) {
+				case 4096:
+					if (chip->ecclevel == BRCMNAND_ECC_HAMMING) {
+						printk(KERN_WARNING "This SLC-4K-page flash may not be suitable for Hamming codes\n");
+						chip->ecclayout = &brcmnand_oob_128;
+					}
+					else {
+						chip->ecclayout = &brcmnand_oob_bch4_4k;
+					}
+					break;
+
+				default:
+					printk(KERN_ERR "Unsupported page size of %d\n", mtd->writesize);
+					BUG();
+					break;
+				}
 			}
 			break;
 			
@@ -8281,8 +8413,8 @@ printk(KERN_INFO "%s, eccsize=%d, writesize=%d, eccsteps=%d, ecclevel=%d, eccbyt
 
 
 
-#if 0
-//gdebug=4;
+#ifdef CONFIG_MTD_BRCMNAND_DISABLE_XOR
+gdebug=4;
 	printk("-----------------------------------------------------\n");
 	print_nand_ctrl_regs();
 	printk("-----------------------------------------------------\n");
@@ -8303,6 +8435,7 @@ printk(KERN_INFO "%s, eccsize=%d, writesize=%d, eccsteps=%d, ecclevel=%d, eccbyt
 	}
 #endif
 
+//gdebug=0;
 PRINTK("%s 99\n", __FUNCTION__);
 
 	return err;

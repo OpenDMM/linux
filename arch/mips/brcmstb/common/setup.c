@@ -181,7 +181,8 @@ void __init  plat_timer_setup(struct irqaction *irq)
 	irq_desc[BCM_LINUX_SYSTIMER_IRQ].status |= IRQ_PER_CPU;
 #endif
 
-	/* Generate first timer interrupt */
+	/* reset COMPARE for first timer interrupt if it is missed */
+	if(read_c0_count() > read_c0_compare())
 	write_c0_compare(read_c0_count() + (mips_hpt_frequency/HZ));
 }
 
@@ -233,7 +234,7 @@ void __init plat_mem_setup(void)
     // Set externalize IO sync bit (CP0 $16, sel 7, bit 8)
 	{
         uint32_t extIO = __read_32bit_c0_register($16, 7);
-(16, 7, extIO | 0x100);
+        __write_32bit_c0_register($16, 7, extIO | 0x100);
         extIO = __read_32bit_c0_register($16, 7);
 	}
 
@@ -381,6 +382,9 @@ static struct moca_platform_data moca_data = {
 
 	.bcm3450_i2c_base =	BPHYSADDR(BCHP_BSCB_REG_START),
 	.bcm3450_i2c_addr =	0x70,
+
+	.hw_rev =		1,
+	.rf_band =		MOCA_BAND_HIGHRF,
 };
 
 static struct resource moca_resources[] = {
@@ -530,6 +534,7 @@ static int __init umac_moca_initcall(void)
 #if defined(BRCM_MOCA_SUPPORTED)
 	BDEV_WR_F(SUN_TOP_CTRL_SW_RESET, moca_sw_reset, 0);
 	BDEV_WR_F(MOCA_HOSTMISC_SW_RESET, moca_enet_reset, 0);
+	BDEV_WR_F(CLK_SYS_PLL_1_CTRL, M3DIV, 11);
 #endif
 	BDEV_RD(BCHP_SUN_TOP_CTRL_SW_RESET);
 	spin_unlock_irqrestore(&g_magnum_spinlock, flags);

@@ -58,6 +58,7 @@
 #define CONFIG_MTD_BRCMNAND_VERS_3_1_1		8	/* RDB reads as 3.0 */
 #define CONFIG_MTD_BRCMNAND_VERS_3_2		9	
 #define CONFIG_MTD_BRCMNAND_VERS_3_3		10	
+#define CONFIG_MTD_BRCMNAND_VERS_3_4		11	
 
 #define BRCMNAND_VERSION(major, minor)	((major<<8) | minor)
 
@@ -153,15 +154,17 @@
 #define SAMSUNG_4THID_PAGESIZE_4KB	0x02
 #define SAMSUNG_4THID_PAGESIZE_8KB	0x03
 
-#define SAMSUNG_4THID_BLKSIZE_MASK	0x30
-#define SAMSUNG_4THID_PAGESIZE_64KB	0x00
-#define SAMSUNG_4THID_PAGESIZE_128KB	0x10
-#define SAMSUNG_4THID_PAGESIZE_256KB	0x20
-#define SAMSUNG_4THID_PAGESIZE_512KB	0x30
-
 #define SAMSUNG_4THID_OOBSIZE_MASK	0x04
 #define SAMSUNG_4THID_OOBSIZE_8B		0x00
 #define SAMSUNG_4THID_OOBSIZE_16B	0x04
+
+#define SAMSUNG_4THID_BLKSIZE_MASK	0x30
+#define SAMSUNG_4THID_BLKSIZE_64KB	0x00
+#define SAMSUNG_4THID_BLKSIZE_128KB	0x10
+#define SAMSUNG_4THID_BLKSIZE_256KB	0x20
+#define SAMSUNG_4THID_BLKSIZE_512KB	0x30
+
+
 
 #define SAMSUNG2_4THID_PAGESIZE_MASK	0x03
 #define SAMSUNG2_4THID_PAGESIZE_2KB	0x00
@@ -169,17 +172,17 @@
 #define SAMSUNG2_4THID_PAGESIZE_8KB	0x02
 #define SAMSUNG2_4THID_PAGESIZE_RSV	0x03
 
-#define SAMSUNG2_4THID_BLKSIZE_MASK		0xB0
-#define SAMSUNG2_4THID_PAGESIZE_128KB	0x00
-#define SAMSUNG2_4THID_PAGESIZE_256KB	0x10
-#define SAMSUNG2_4THID_PAGESIZE_512KB	0x20
-#define SAMSUNG2_4THID_PAGESIZE_1MB		0x30
-#define SAMSUNG2_4THID_PAGESIZE_RSVD1	0x80
-#define SAMSUNG2_4THID_PAGESIZE_RSVD2	0x90
-#define SAMSUNG2_4THID_PAGESIZE_RSVD3	0xA0
-#define SAMSUNG2_4THID_PAGESIZE_RSVD4	0xB0
+#define SAMSUNG2_4THID_BLKSIZE_MASK	0xB0
+#define SAMSUNG2_4THID_BLKSIZE_128KB	0x00
+#define SAMSUNG2_4THID_BLKSIZE_256KB	0x10
+#define SAMSUNG2_4THID_BLKSIZE_512KB	0x20
+#define SAMSUNG2_4THID_BLKSIZE_1MB	0x30
+#define SAMSUNG2_4THID_BLKSIZE_RSVD1	0x80
+#define SAMSUNG2_4THID_BLKSIZE_RSVD2	0x90
+#define SAMSUNG2_4THID_BLKSIZE_RSVD3	0xA0
+#define SAMSUNG2_4THID_BLKSIZE_RSVD4	0xB0
 
-#define SAMSUNG2_4THID_OOBSIZE_MASK	0x4c
+#define SAMSUNG2_4THID_OOBSIZE_MASK			0x4c
 #define SAMSUNG2_4THID_OOBSIZE_PERPAGE_128	0x04
 #define SAMSUNG2_4THID_OOBSIZE_PERPAGE_218	0x08
 
@@ -228,6 +231,9 @@
 
 /* Hynix MLC flashes, same infos as Samsung, except the 5th Byte */
 #define HYNIX_HY27UT088G2A	0xD3
+
+/* Hynix MLC flashes, same infos as Samsung, except the 5th Byte */
+#define HYNIX_HY27UAG8T2M		0xD5	/* 14H, B6H, 44H: 3rd,4th,5th ID bytes */
 
 /* Number of Planes, same as Samsung */
 
@@ -453,6 +459,7 @@ struct brcmnand_chip {
 	uint64_t			chipSize;
 	unsigned int		numchips; // Always 1 in v0.0 and 0.1, up to 8 in v1.0+
 	int 				directAccess;		// For v1,0+, use directAccess or EBI address	
+	int				xor_disable[MAX_NAND_CS];	// Value of  !NAND_CS_NAND_XOR:00
 	int 				CS[MAX_NAND_CS];	// Value of CS selected one per chip, in ascending order of chip Select (enforced)..
 										// Say, user uses CS0, CS2, and CS5 for NAND, then the first 3 entries
 										// have the values 0, 2 and 5, and numchips=3.
