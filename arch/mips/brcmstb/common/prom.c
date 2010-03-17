@@ -454,7 +454,8 @@ void __init prom_init(void)
 			brcm_smp_enabled = 0;
 			break;
 		case 0x4:
-			/* 7205 */
+		case 0x6:
+			/* 7205/7213 */
 			brcm_emac_1_enabled = 0;
 			break;
 	}
@@ -514,7 +515,7 @@ void __init prom_init(void)
 		}
 
 		/* display warning for all 00's, all ff's, or multicast */
-		if(! ok || (gHwAddrs[0][1] & 1)) {
+		if(! ok || (gHwAddrs[0][0] & 1)) {
 			u8 fixed_macaddr[] = { 0x00,0x00,0xde,0xad,0xbe,0xef };
 			printk(KERN_WARNING
 				"WARNING: read invalid MAC address "
