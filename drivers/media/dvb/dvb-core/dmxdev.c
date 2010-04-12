@@ -181,7 +181,7 @@ static int dvb_dvr_release(struct inode *inode, struct file *file)
 	struct dvb_device *dvbdev = file->private_data;
 	struct dmxdev *dmxdev = dvbdev->priv;
 
-	mutex_lock_interruptible(&dmxdev->mutex);
+	mutex_lock(&dmxdev->mutex);
 
 	if ((file->f_flags & O_ACCMODE) == O_WRONLY) {
 		dmxdev->demux->disconnect_frontend(dmxdev->demux);
@@ -730,8 +730,8 @@ static int dvb_demux_open(struct inode *inode, struct file *file)
 static int dvb_dmxdev_filter_free(struct dmxdev *dmxdev,
 				  struct dmxdev_filter *dmxdevfilter)
 {
-	mutex_lock_interruptible(&dmxdev->mutex);
-	mutex_lock_interruptible(&dmxdevfilter->mutex);
+	mutex_lock(&dmxdev->mutex);
+	mutex_lock(&dmxdevfilter->mutex);
 
 	dvb_dmxdev_filter_stop(dmxdevfilter);
 	dvb_dmxdev_filter_reset(dmxdevfilter);
