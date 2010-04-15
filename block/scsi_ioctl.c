@@ -303,7 +303,9 @@ static int cdb_xfer_len(unsigned char *cdb, unsigned int sector_size)
 	case GPCMD_SET_STREAMING:
 		xfer_len = (cdb[9] << 8) | cdb[10];
 		break;
-
+	case ATA_16:
+		xfer_len = 16;
+		break;
 	default:
 		printk(KERN_WARNING "WARNING: UNCHECKED SCSI OPCODE 0x%02x, POTENTIAL FOR ATA CORRUPTION!!\n", cdb[0]);
 		xfer_len = -1;
