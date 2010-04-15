@@ -120,7 +120,7 @@ static inline void set_io_port_base(unsigned long base)
  *     almost all conceivable cases a device driver should not be using
  *     this function
  */
-static inline unsigned long virt_to_phys(volatile void * address)
+static inline unsigned long virt_to_phys(volatile const void *address)
 {
 #ifdef CONFIG_DISCONTIGMEM
 	return __pa((unsigned long)address);
@@ -229,7 +229,8 @@ static inline void __iomem * __ioremap_mode(phys_t offset, unsigned long size,
 		 */
 		if (__IS_LOW512(phys_addr) && __IS_LOW512(last_addr) &&
 		    flags == _CACHE_UNCACHED)
-			return (void __iomem *)CKSEG1ADDR(phys_addr);
+			return (void __iomem *)
+				(unsigned long)CKSEG1ADDR(phys_addr);
 	}
 
 	return __ioremap(offset, size, flags);
