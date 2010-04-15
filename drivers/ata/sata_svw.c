@@ -855,7 +855,7 @@ static void k2_sata_tf_load(struct ata_port *ap, const struct ata_taskfile *tf)
 		else
 #endif
 		{
-			writeb(tf->ctl, ioaddr->ctl_addr);
+			writeb(tf->ctl, (void *)ioaddr->ctl_addr);
 		}
 		ap->last_ctl = tf->ctl;
 		ata_wait_idle(ap);
