@@ -616,6 +616,7 @@ static const unsigned char ffchars[] = {
 
 //static unsigned char eccmask[128]; // Will be initialized during probe
 
+#ifdef CONFIG_MIPS_BCM7405BX
 static uint32_t reg_p23[] = {
 	0x2848, 0x2850, 0x2854,				//2844..284c
 	0x2858, 0x2860, 0x2868, 0x286c,		//2850..285c
@@ -640,6 +641,9 @@ static inline uint32_t __attribute__((always_inline)) fixreg_p23(uint32_t reg)
 
 	return reg_p23[(reg-0x2844)>>2];
 }
+#else
+	#define fixreg_p23(reg) reg
+#endif
 
 static uint32_t brcmnand_ctrl_read(uint32_t nandCtrlReg) 
 {
