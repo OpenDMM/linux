@@ -627,22 +627,20 @@ static uint32_t reg_p23[] = {
 
 static int p23_init, p23_rev;
 
-static inline uint32_t __attribute__((always_inline)) fixreg_p23(uint32_t reg)
-{
-	if (unlikely(!p23_init)) {
-		int revid = *(volatile unsigned long *)0xb0404000;
-		p23_init = 1;
-		if ((revid >> 16) == 0x7413)
-			p23_rev = 1;
-	}
-
-	if (likely(!p23_rev || reg < 0x2844))
-		return reg;
-
-	return reg_p23[(reg-0x2844)>>2];
-}
+#define fixreg_p23(reg)							\
+	if (unlikely(!p23_init)) {					\
+		int revid = *(volatile unsigned long *)0xb0404000;	\
+		p23_init = 1;						\
+		if ((revid >> 16) == 0x7413)				\
+			p23_rev = 1;					\
+	}								\
+									\
+	if (likely(!p23_rev || reg < 0x2844))				\
+		;							\
+	else								\
+		reg = reg_p23[(reg-0x2844)>>2];
 #else
-	#define fixreg_p23(reg) reg
+	#define fixreg_p23(reg)
 #endif
 
 #define BCHP_NAND_LAST_REG	BCHP_NAND_BLK_WR_PROTECT
@@ -677,7 +675,7 @@ static int inRegisterHoles(uint32_t reg)
 static uint32_t brcmnand_ctrl_read(uint32_t nandCtrlReg) 
 {
 	volatile unsigned long* pReg;
-	nandCtrlReg = fixreg_p23(nandCtrlReg);
+	fixreg_p23(nandCtrlReg);
 
 	pReg = (volatile unsigned long*) (BRCMNAND_CTRL_REGS 
 		+ nandCtrlReg - BCHP_NAND_REVISION);
@@ -694,7 +692,7 @@ if (gdebug > 3) printk("%s: CMDREG=%08x val=%08x\n", __FUNCTION__, (unsigned int
 static void brcmnand_ctrl_write(uint32_t nandCtrlReg, uint32_t val) 
 {
 	volatile unsigned long* pReg;
-	nandCtrlReg = fixreg_p23(nandCtrlReg);
+	fixreg_p23(nandCtrlReg);
 
 	pReg = (volatile unsigned long*) (BRCMNAND_CTRL_REGS 
 		+ nandCtrlReg - BCHP_NAND_REVISION);
