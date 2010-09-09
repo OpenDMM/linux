@@ -59,17 +59,14 @@ struct dmxdev_filter {
 	} filter;
 
 	union {
+		struct dmx_ts_feed *ts;
+		struct dmx_section_feed *sec;
+	} feed;
+
+	union {
 		struct dmx_sct_filter_params sec;
 		struct dmx_pes_filter_params pes;
 	} params;
-
-	struct dmx_section_feed *feed_sec;
-
-	struct dmxdev_feed {
-		int pid;
-		struct dmx_ts_feed *ts;
-		struct dmxdev_feed *next;
-	} *feeds;
 
 	enum dmxdev_type type;
 	enum dmxdev_state state;
