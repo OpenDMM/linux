@@ -797,7 +797,7 @@ static int dvb_dmxdev_remove_pid(struct dmxdev *dmxdev,
 		if ((*feed)->pid == pid) {
 			struct dmxdev_feed *f=*feed;
 			if (f->ts) {  // feed active
-				f->ts->stop_filtering(f->ts);
+				int ret = f->ts->stop_filtering(f->ts);
 				dmxdevfilter->dev->demux->release_ts_feed(
 					dmxdevfilter->dev->demux,
 					f->ts);
