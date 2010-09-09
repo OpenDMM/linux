@@ -52,9 +52,9 @@ static const char * const dnames[] = {
 };
 
 #define DVB_MAX_ADAPTERS	8
-#define DVB_MAX_IDS		8
-#define nums2minor(num,type,id)	((num << 7) | (id << 4) | type)
-#define MAX_DVB_MINORS		(DVB_MAX_ADAPTERS*128)
+#define DVB_MAX_IDS		4
+#define nums2minor(num,type,id)	((num << 6) | (id << 4) | type)
+#define MAX_DVB_MINORS		(DVB_MAX_ADAPTERS*64)
 
 static struct class *dvb_class;
 
