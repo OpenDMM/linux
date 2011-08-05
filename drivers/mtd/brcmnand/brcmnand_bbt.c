@@ -533,13 +533,13 @@ static int brcmnand_scan_block_fast(struct mtd_info *mtd, struct nand_bbt_descr 
 			uint32_t acc0;
 	
 			// Disable ECC
-			acc0 = brcmnand_disable_ecc();
+			acc0 = brcmnand_disable_ecc((struct brcmnand_chip*)(mtd->priv));
 
 			// Re-read the OOB
 			ret = mtd->read_oob(mtd, offs, &ops);
 
 			// Enable ECC back
-			brcmnand_restore_ecc(acc0);
+			brcmnand_restore_ecc((struct brcmnand_chip*)(mtd->priv), acc0);
 		}
 		if (ret)
 			return ret;
@@ -1884,7 +1884,7 @@ memset(&oob[9], 0, 4); // * Overwrite the ECC to force EBADMSG
 //bOffsetEnd = 0x7ff80000;
 
 	/* Disable ECC */
-	acc0 = brcmnand_disable_ecc();
+	acc0 = brcmnand_disable_ecc((struct brcmnand_chip *)(mtd->priv));
 
 PRINTK("Invalidate ECC at page %llx\n", bbt0Page);
 
@@ -1893,7 +1893,7 @@ PRINTK("Invalidate ECC at page %llx\n", bbt0Page);
 	if (res) PRINTK("%s: write_page_oob failed, res=%d\n", __FUNCTION__, res);
 
 	// Restore acc0
-	brcmnand_restore_ecc(acc0);
+	brcmnand_restore_ecc((struct brcmnand_chip *)(mtd->priv), acc0);
 }
 #else
 
