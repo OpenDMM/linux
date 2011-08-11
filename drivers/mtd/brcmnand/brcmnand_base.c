@@ -263,12 +263,6 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
 	},
 
-#if 0 
-/* 
- * SW3556-862, SWLINUX-1459
- * Samsung replaced this SLC part with a new SLC part, different block size and page size but re-use the same ID
- * Side effect: The old flash part can no longer be supported.
- */
 	{	/* 6 */
 		.chipId = SAMSUNG_K9K8G08U0A,
 		.mafId = FLASHTYPE_SAMSUNG,
@@ -279,18 +273,6 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 		.nop=4,
 		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
 	},
-#else
-	{	/* 6 Same old ID 0xD3, new part, so the old #define macro is kept, but IDstr is changed to reflect new part number */
-		.chipId = SAMSUNG_K9K8G08U0A,
-		.mafId = FLASHTYPE_SAMSUNG,
-		.chipIdStr = "Samsung K9F8G08U0M",
-		.options = NAND_USE_FLASH_BBT,
-		.idOptions = BRCMNAND_ID_EXT_BYTES, /* New Samsung SLC has all 5 ID bytes defined */
-		.timing1 = 0, .timing2 = 0,
-		.nop=4,
-		.ctrlVersion = CONFIG_MTD_BRCMNAND_VERS_2_1,
-	},
-#endif
 
 
 	{	/* 7 */
@@ -541,7 +523,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 	{	/* 29 */
 		.chipId = SAMSUNG_K9GA08U0D,
 		.mafId = FLASHTYPE_SAMSUNG,
-		.chipIdStr = "Samsung K9GAG08U0D",
+		.chipIdStr = "Samsung K9GA08U0D",
 		.options = NAND_USE_FLASH_BBT, 		/* Use BBT on flash */
 				//| NAND_COMPLEX_OOB_WRITE	/* Write data together with OOB for write_oob */
 		.idOptions = BRCMNAND_ID_EXT_BYTES_TYPE2,
@@ -1340,9 +1322,6 @@ printk("-->%s, raw=%d\n", __FUNCTION__, raw);}
  * BRCMNAND_UNCORRECTABLE_ECC_ERROR	(-1)
  * BRCMNAND_FLASH_STATUS_ERROR			(-2)
  * BRCMNAND_TIMED_OUT					(-3)
- *
- * Is_Valid in the sense that the data is valid in the cache.  
- * It does not means that the data is either correct or correctable.
  */
  
 static int brcmnand_cache_is_valid(struct mtd_info* mtd,  int state, loff_t offset) 
@@ -1360,17 +1339,23 @@ printk("%s: offset=%0llx\n", __FUNCTION__, offset);}
 		PLATFORM_IOFLUSH_WAR();
 		ready = chip->ctrl_read(BCHP_NAND_INTFC_STATUS);
 
-		if ((ready & BCHP_NAND_INTFC_STATUS_CTLR_READY_MASK) 
-		&& (ready & BCHP_NAND_INTFC_STATUS_CACHE_VALID_MASK)) {
+		if (ready & (BCHP_NAND_INTFC_STATUS_CTLR_READY_MASK | 0x1)) {
 			int ecc;
+			
+			if (ready & 0x1) {
+				printk(KERN_ERR "%s: Flash chip report error %08x\n", __FUNCTION__, ready);
+				return BRCMNAND_FLASH_STATUS_ERROR;
+			}
 
+			//if (!raw) {
 			ecc = brcmnand_ctrl_verify_ecc(chip, state, 0);
 // Let caller handle it
 //printk("%s: Possible Uncorrectable ECC error at offset %08x\n", __FUNCTION__, (unsigned long) offset);
-//if (gdebug > 3 && ecc) {
-//printk("<--%s: ret = %d\n", __FUNCTION__, ecc);}
+if (gdebug > 3 ) {
+printk("<--%s: ret = %d\n", __FUNCTION__, ecc);}
 			return ecc;
-			
+			//}
+			//return BRCMNAND_SUCCESS;
 		}
 		if (state != FL_READING && (!wr_preempt_en) && !in_interrupt())
 			cond_resched();
@@ -2351,7 +2336,7 @@ if (gdebug > 3 )
 			}
 
 #ifndef DEBUG_HW_ECC
-			if (oobarea || (valid == BRCMNAND_CORRECTABLE_ECC_ERROR)) 
+			if (oobarea || (ret == BRCMNAND_CORRECTABLE_ECC_ERROR)) 
 #endif
 			{
 				PLATFORM_IOFLUSH_WAR();
@@ -2364,7 +2349,7 @@ if (gdebug)
 
 #ifndef DEBUG_HW_ECC // Comment out for debugging
 			/* Make sure error was not in ECC bytes */
-			if (valid == BRCMNAND_CORRECTABLE_ECC_ERROR && 
+			if (ret == BRCMNAND_CORRECTABLE_ECC_ERROR && 
 				chip->ecclevel == BRCMNAND_ECC_HAMMING) 
 #endif
 
@@ -2381,12 +2366,7 @@ if (gdebug)
 				}
 				
 			}
-			
-			if (valid == BRCMNAND_CORRECTABLE_ECC_ERROR) 
-				ret = BRCMNAND_CORRECTABLE_ECC_ERROR;
-			else
-				ret = 0;
-		 
+			ret = 0;
 			done = 1;
 			break;
 			
@@ -2404,16 +2384,10 @@ if (gdebug)
 		case BRCMNAND_TIMED_OUT:
 			//Read has timed out 
 			ret = -ETIMEDOUT;
-			if (!wr_preempt_en) {
-				retries--;
-				// THT PR50928: if wr_preempt is disabled, enable it to clear error
-				wr_preempt_en = brcmnand_handle_ctrl_timeout(mtd, retries);
-				continue;  /* Retry */
-			}
-			else {
-				done = 1;
-				break;
-			}
+			retries--;
+			// THT PR50928: if wr_preempt is disabled, enable it to clear error
+			wr_preempt_en = brcmnand_handle_ctrl_timeout(mtd, retries);
+			continue;  /* Retry */
 
 		default:
 			BUG_ON(1);
@@ -3824,7 +3798,6 @@ brcmnand_read_page(struct mtd_info *mtd,
 	int oobRead = 0;
 	int ret = 0;
 	uint64_t offset = ((uint64_t) page) << chip->page_shift;
-	int corrected = 0; // Only update stats once per page
 
 //if (1/* (int) offset <= 0x2000 /*gdebug > 3 */) {
 //printk("-->%s, offset=%08x\n", __FUNCTION__, (uint32_t) offset);}
@@ -3839,12 +3812,7 @@ printk("-->%s, page=%0llx\n", __FUNCTION__, page);}
 					offset + dataRead);
 		
 		if (ret == BRCMNAND_CORRECTABLE_ECC_ERROR) {
-if (gdebug>3 && ret) printk("%s 1: calling brcmnand_posted_read_cache returns %d\n",
-__FUNCTION__, ret);
-			if ( !corrected) {
-				(mtd->ecc_stats.corrected)++;
-				corrected = 1;
-			}
+			(mtd->ecc_stats.corrected)++;
 			ret = 0;
 		} 
 		else if (ret < 0) {
@@ -3894,13 +3862,9 @@ printk("-->%s, offset=%0llx\n", __FUNCTION__, offset);}
 					offset + dataRead, 1);
 //gdebug=0;
 		
-		if (ret == BRCMNAND_CORRECTABLE_ECC_ERROR) {
-if (gdebug>3 && ret) printk("%s 2: calling brcmnand_posted_read_oob returns %d\n",
-__FUNCTION__, ret);
-			if ( !corrected) {
-				(mtd->ecc_stats.corrected)++;
-				corrected = 1;
-			}
+		if (ret == BRCMNAND_CORRECTABLE_ECC_ERROR && !corrected) {
+			(mtd->ecc_stats.corrected)++;
+			corrected = 1;
 			ret = 0;
 		} 
 		else if (ret < 0) {
@@ -4816,15 +4780,14 @@ printk("-->%s, offset=%0llx, len=%08x\n", __FUNCTION__, from, len);}
  * We will not mark a block bad when the a correctable error already happened on the same page
  */
 #if CONFIG_MTD_BRCMNAND_VERSION <= CONFIG_MTD_BRCMNAND_VERS_3_4
-					if (chip->ecclevel != BRCMNAND_ECC_HAMMING)
-						ret = 0;
-					else
-#endif
+					ret = 0;
+#else
 					if (status) {
 						ret = -EUCLEAN;
 					} else {
 						ret = 0;
 					}
+#endif
 				}
 				if (gdebug > 3) {
 					printk(KERN_INFO "DEBUG -> %s ret = %d, status = %d\n", __FUNCTION__, ret, status);
@@ -6172,15 +6135,8 @@ static int brcmnand_block_checkbad(struct mtd_info *mtd, loff_t ofs, int getchip
 		brcmnand_get_device(mtd, FL_READING);
 	}
 	
-	// BBT already initialized
-	if (chip->isbad_bbt) {
-	
-		/* Return info from the table */
-		res = chip->isbad_bbt(mtd, ofs, allowbbt);
-	}
-	else {
-		res = brcmnand_isbad_raw(mtd, ofs);
-	}
+	/* Return info from the table */
+	res = chip->isbad_bbt(mtd, ofs, allowbbt);
 
 	if (getchip) {
 		brcmnand_release_device(mtd);

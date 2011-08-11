@@ -275,7 +275,7 @@ PRINTK("%s: calling read_ecc len=%d, bits=%d, num=%d, totallen=%d\n", __FUNCTION
 		res = mtd->read(mtd, from, len, &retlen, buf);
 		if (res < 0) {
 			if (retlen != len) {
-				printk (KERN_ERR "%s: Error reading bad block table, retlen=%d\n", __FUNCTION__, retlen);
+				printk (KERN_ERR "%s: Error reading bad block table, retlen=%d\n", __FUNCTION__);
 				return res;
 			}
 			printk (KERN_ERR "%s: ECC error while reading bad block table\n", __FUNCTION__);
@@ -799,9 +799,7 @@ static int brcmnand_write_bbt(struct mtd_info *mtd, uint8_t *buf,
 	loff_t to;
 	struct mtd_oob_ops ops;
 
-#ifdef DEBUG_BBT
 bbt_outofspace_retry:
-#endif
 
 DEBUG(MTD_DEBUG_LEVEL3, "-->%s\n", __FUNCTION__);
 	ops.ooblen = mtd->oobsize;
@@ -1434,12 +1432,12 @@ int brcmnand_reconstruct_bbt (struct mtd_info *mtd, int whichbbt)
 {
 	struct brcmnand_chip *this = mtd->priv;
 	int len, res = 0, writeops = 0;
-//	int chip, chipsel;
+	int chip, chipsel;
 	uint8_t *buf = NULL;
 	struct nand_bbt_descr *td = this->bbt_td;
 	struct nand_bbt_descr *md = this->bbt_md;
 	uint32_t bbtSize;
-//	uint32_t block;
+	uint32_t block;
 	uint64_t bOffset, startBlock, badBlock = 0; 
 	int modified = 0;
 
@@ -2229,82 +2227,6 @@ static int brcmnand_isbad_bbt (struct mtd_info *mtd, loff_t offs, int allowbbt)
 	return 1;
 }
 
-/**
- * brcmnand_isbad_raw - [NAND Interface] Check if a block is bad in the absence of BBT
- * @mtd:	MTD device structure
- * @offs:	offset in the device
- *
- * Each byte in the BBT contains 4 entries, 2 bits each per block.
- * So the entry for the block b is:
- * bbt[b >> 2] & (0x3 << ((b & 0x3) << 1)))
- *
-*/
-int brcmnand_isbad_raw (struct mtd_info *mtd, loff_t offs)
-{
-	struct brcmnand_chip *this = mtd->priv;
-	//uint32_t block; // Used as an index, so 32bit.
-	uint8_t	isBadBlock = 0;
-	int i;
-
-	unsigned char oobbuf[64];
-	int numpages;
-	/* THT: This __can__ be a 36bit integer (NAND controller address space is 48bit wide, minus
-	 * page size of 2*12, therefore 36bit max
-	  */
-	uint64_t blockPage = offs >> this->page_shift;
-	int dir;
-	uint64_t page;
-
-printk("-->%s(offs=%llx\n", __FUNCTION__, offs);
-
-	/* How many pages should we scan */
-	if (this->badblock_pattern->options & NAND_BBT_SCAN2NDPAGE) {
-		if (this->options &  NAND_SCAN_BI_3RD_PAGE) {
-			numpages = 3;
-		}
-		else {
-			numpages = 2;
-		}
-	} else {
-		numpages = 1;
-	}
-
-printk("%s: 20\n", __FUNCTION__);
-
-	if (!NAND_IS_MLC(this)) { // SLC: First and 2nd page
-		dir = 1;
-		page = blockPage; // first page of block
-	}
-	else { // MLC: Read last page
-		int pagesPerBlock = mtd->erasesize/mtd->writesize;
-		
-		dir = -1;
-		page = blockPage + pagesPerBlock - 1; // last page of block
-	}
-
-printk("%s: 20\n", __FUNCTION__);
-	
-	for (i=0; i<numpages; i++, page += i*dir) {
-		int res;
-		//int retlen = 0;
-
-printk("%s: 50 calling read_page_oob=%p\n", __FUNCTION__, this->read_page_oob);
-		res = this->read_page_oob(mtd, oobbuf, page);
-		if (!res) {
-			if (check_short_pattern (oobbuf, this->badblock_pattern)) {
-				isBadBlock = 1;
-				break;
-			}
-		}
-		else {
-			printk(KERN_DEBUG "brcmnand_read_pageoob returns %d for page %0llx\n",
-				res, page);
-		}
-	}
-		
-	return isBadBlock;
-}
-
 
 /**
  * brcmnand_default_bbt - [NAND Interface] Select a default bad block table for the device
@@ -2385,6 +2307,7 @@ printk("%s: bbt_td = bbt_slc_bch4_main_descr\n", __FUNCTION__);
 				&largepage_memorybased : &smallpage_memorybased;
 		}
 	}
+	this->isbad_bbt = brcmnand_isbad_bbt;
 
 	/*
 	 * BBT partition occupies 1 MB at the end of the useable flash, so adjust maxblocks accordingly.
@@ -2408,12 +2331,6 @@ PRINTK("%s: gClearBBT = %d\n", __FUNCTION__, gClearBBT);
 	}
 	
 	res =  brcmnand_scan_bbt (mtd, this->badblock_pattern);
-
-	/*
-	 * Now that we have scanned the BBT, allow BBT-lookup
-	 */
-	if (!res)
-		this->isbad_bbt = brcmnand_isbad_bbt;
 
 	if (gClearBBT) {
 		(void) brcmnand_postprocessKernelArg(mtd);

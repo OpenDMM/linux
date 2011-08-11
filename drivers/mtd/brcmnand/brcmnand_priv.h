@@ -303,9 +303,6 @@ extern int brcmnand_scan(struct mtd_info *mtd , int maxchips );
 extern void brcmnand_release(struct mtd_info *mtd);
 
 /* BrcmNAND BBT interface */
-/* Read the OOB bytes and tell whether a block is bad without consulting the BBT */
-extern int brcmnand_isbad_raw (struct mtd_info *mtd, loff_t offs);
-
 extern int brcmnand_scan_bbt(struct mtd_info *mtd, struct nand_bbt_descr *bd);
 extern int brcmnand_default_bbt(struct mtd_info *mtd);
 
