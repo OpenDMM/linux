@@ -137,11 +137,6 @@ loff_t gLastKnownGoodEcc;
 static atomic_t inrefresh = ATOMIC_INIT(0); 
 static int brcmnand_refresh_blk(struct mtd_info *, loff_t);
 static int brcmnand_erase_nolock(struct mtd_info *, struct erase_info *, int);
-
-// Disable CET
-#define brcmnand_create_cet(...) 	(0)
-#define brcmnand_cet_erasecallback(...)	(0)
-#define brcmnand_cet_prepare_reboot(...)	(0)
 #endif
 
 
@@ -575,7 +570,7 @@ static brcmnand_chip_Id brcmnand_chips[] = {
 	{	/* 29 */
 		.chipId = SAMSUNG_K9GA08U0D,
 		.mafId = FLASHTYPE_SAMSUNG,
-		.chipIdStr = "Samsung K9GA08U0D",
+		.chipIdStr = "Samsung K9GAG08U0D",
 		.options = NAND_USE_FLASH_BBT, 		/* Use BBT on flash */
 				//| NAND_COMPLEX_OOB_WRITE	/* Write data together with OOB for write_oob */
 		.idOptions = BRCMNAND_ID_EXT_BYTES_TYPE2,
@@ -2589,7 +2584,7 @@ printk("%s: before intr_status=%08x\n", __FUNCTION__, intr_status);
 			}
 
 #ifndef DEBUG_HW_ECC
-			if (oobarea || (ret == BRCMNAND_CORRECTABLE_ECC_ERROR)) 
+			if (oobarea || (valid == BRCMNAND_CORRECTABLE_ECC_ERROR)) 
 #endif
 			{
 				PLATFORM_IOFLUSH_WAR();
@@ -2602,7 +2597,7 @@ if (gdebug)
 
 #ifndef DEBUG_HW_ECC // Comment out for debugging
 			/* Make sure error was not in ECC bytes */
-			if (ret == BRCMNAND_CORRECTABLE_ECC_ERROR && 
+			if (valid == BRCMNAND_CORRECTABLE_ECC_ERROR && 
 				chip->ecclevel == BRCMNAND_ECC_HAMMING) 
 #endif
 
@@ -2619,7 +2614,12 @@ if (gdebug)
 				}
 				
 			}
-			ret = 0;
+			
+			if (valid == BRCMNAND_CORRECTABLE_ECC_ERROR) 
+				ret = BRCMNAND_CORRECTABLE_ECC_ERROR;
+			else
+				ret = 0;
+		 
 			done = 1;
 			break;
 			
@@ -2637,10 +2637,16 @@ if (gdebug)
 		case BRCMNAND_TIMED_OUT:
 			//Read has timed out 
 			ret = -ETIMEDOUT;
-			retries--;
-			// THT PR50928: if wr_preempt is disabled, enable it to clear error
-			wr_preempt_en = brcmnand_handle_ctrl_timeout(mtd, retries);
-			continue;  /* Retry */
+			if (!wr_preempt_en) {
+				retries--;
+				// THT PR50928: if wr_preempt is disabled, enable it to clear error
+				wr_preempt_en = brcmnand_handle_ctrl_timeout(mtd, retries);
+				continue;  /* Retry */
+			}
+			else {
+				done = 1;
+				break;
+			}
 
 		default:
 			BUG_ON(1);
@@ -4070,6 +4076,7 @@ brcmnand_read_page(struct mtd_info *mtd,
 	int oobRead = 0;
 	int ret = 0;
 	uint64_t offset = ((uint64_t) page) << chip->page_shift;
+	int corrected = 0; // Only update stats once per page
 
 //if (1/* (int) offset <= 0x2000 /*gdebug > 3 */) {
 //printk("-->%s, offset=%08x\n", __FUNCTION__, (uint32_t) offset);}
@@ -4084,7 +4091,12 @@ printk("-->%s, page=%0llx\n", __FUNCTION__, page);}
 					offset + dataRead);
 		
 		if (ret == BRCMNAND_CORRECTABLE_ECC_ERROR) {
-			(mtd->ecc_stats.corrected)++;
+if (gdebug>3 && ret) printk("%s 1: calling brcmnand_posted_read_cache returns %d\n",
+__FUNCTION__, ret);
+			if ( !corrected) {
+				(mtd->ecc_stats.corrected)++;
+				corrected = 1;
+			}
 			ret = 0;
 		} 
 		else if (ret < 0) {
@@ -4134,9 +4146,13 @@ printk("-->%s, offset=%0llx\n", __FUNCTION__, offset);}
 					offset + dataRead, 1);
 //gdebug=0;
 		
-		if (ret == BRCMNAND_CORRECTABLE_ECC_ERROR && !corrected) {
-			(mtd->ecc_stats.corrected)++;
-			corrected = 1;
+		if (ret == BRCMNAND_CORRECTABLE_ECC_ERROR) {
+if (gdebug>3 && ret) printk("%s 2: calling brcmnand_posted_read_oob returns %d\n",
+__FUNCTION__, ret);
+			if ( !corrected) {
+				(mtd->ecc_stats.corrected)++;
+				corrected = 1;
+			}
 			ret = 0;
 		} 
 		else if (ret < 0) {
@@ -5025,7 +5041,7 @@ static int brcmnand_read(struct mtd_info *mtd, loff_t from, size_t len,
 {
 	struct brcmnand_chip *chip = mtd->priv;
 	int ret;
-#if 0 // def CONFIG_MTD_BRCMNAND_CORRECTABLE_ERR_HANDLING
+#ifdef CONFIG_MTD_BRCMNAND_CORRECTABLE_ERR_HANDLING
 	int status;
 #endif
 
@@ -5062,34 +5078,31 @@ printk("-->%s, offset=%0llx, len=%08x\n", __FUNCTION__, from, len);}
 	if (unlikely(ret == -EUCLEAN && !atomic_read(&inrefresh))) {
 		atomic_inc(&inrefresh);
 		if(brcmnand_refresh_blk(mtd, from) == 0) { 
-			ret = 0; // as if there are no correctable errors.
+			ret = 0; 
 		}
-		// else return -EUCLEAN and let the fs codes handle it.
-#if 0
 		if (likely(chip->cet)) {
 			if (likely(chip->cet->flags != BRCMNAND_CET_DISABLED)) {
 				if (brcmnand_cet_update(mtd, from, &status) == 0) {
-
 /*
  * PR57272: Provide workaround for BCH-n ECC HW bug when # error bits >= 4 
  * We will not mark a block bad when the a correctable error already happened on the same page
  */
 #if CONFIG_MTD_BRCMNAND_VERSION <= CONFIG_MTD_BRCMNAND_VERS_3_4
-					ret = 0;
-#else
+					if (chip->ecclevel != BRCMNAND_ECC_HAMMING)
+						ret = 0;
+					else
+#endif
 					if (status) {
 						ret = -EUCLEAN;
 					} else {
 						ret = 0;
 					}
-#endif
 				}
 				if (gdebug > 3) {
 					printk(KERN_INFO "DEBUG -> %s ret = %d, status = %d\n", __FUNCTION__, ret, status);
 				}
 			}
 		}
-#endif
 		atomic_dec(&inrefresh);
 	}
 #endif
@@ -6460,8 +6473,15 @@ static int brcmnand_block_checkbad(struct mtd_info *mtd, loff_t ofs, int getchip
 		brcmnand_get_device(mtd, FL_READING);
 	}
 	
-	/* Return info from the table */
-	res = chip->isbad_bbt(mtd, ofs, allowbbt);
+	// BBT already initialized
+	if (chip->isbad_bbt) {
+	
+		/* Return info from the table */
+		res = chip->isbad_bbt(mtd, ofs, allowbbt);
+	}
+	else {
+		res = brcmnand_isbad_raw(mtd, ofs);
+	}
 
 	if (getchip) {
 		brcmnand_release_device(mtd);
@@ -8993,9 +9013,6 @@ printk(KERN_INFO "%s, eccsize=%d, writesize=%d, eccsteps=%d, ecclevel=%d, eccbyt
 	err =  chip->scan_bbt(mtd);
 
 
-
-// Starting with 2618-7.5, we no longer use the CET table (We still use the refresh mechanism
-// All CET functions except cet_refresh_block are stubbed out.
 #ifdef CONFIG_MTD_BRCMNAND_CORRECTABLE_ERR_HANDLING
   #ifdef CONFIG_MTD_BRCMNAND_EDU
 	// For EDU Allocate the buffer early.
