@@ -326,9 +326,9 @@ extern int brcmnand_create_cet(struct mtd_info *mtd);
 /*
  * Disable ECC, and return the original ACC register (for restore)
  */
-uint32_t brcmnand_disable_ecc(void);
+uint32_t brcmnand_disable_ecc(struct brcmnand_chip *chip);
 
-void brcmnand_restore_ecc(uint32_t orig_acc0);
+void brcmnand_restore_ecc(struct brcmnand_chip *chip, uint32_t orig_acc0);
 
 void brcmnand_post_mortem_dump(struct mtd_info* mtd, loff_t offset);	
 

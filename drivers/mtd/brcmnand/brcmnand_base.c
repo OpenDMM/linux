@@ -897,11 +897,12 @@ if (gdebug > 3) printk("%s: offset=%0llx  cs=%d ldw = %08x, udw = %08x\n", __FUN
 /*
  * Disable ECC, and return the original ACC register (for restore)
  */
-uint32_t brcmnand_disable_ecc(void)
+uint32_t brcmnand_disable_ecc(struct brcmnand_chip *chip)
 {
 	uint32_t acc0;
 	uint32_t acc;
-	
+	chip->pagebuf = -1LL;
+
 	/* Disable ECC */
 	acc0 = brcmnand_ctrl_read(BCHP_NAND_ACC_CONTROL);
 	acc = acc0 & ~(BCHP_NAND_ACC_CONTROL_RD_ECC_EN_MASK | BCHP_NAND_ACC_CONTROL_RD_ECC_BLK0_EN_MASK);
@@ -911,8 +912,10 @@ uint32_t brcmnand_disable_ecc(void)
 }
 
 // Restore acc
-void brcmnand_restore_ecc(uint32_t orig_acc0) 
+void brcmnand_restore_ecc(struct brcmnand_chip *chip, uint32_t orig_acc0) 
 {
+	chip->pagebuf = -1LL;
+
 	brcmnand_ctrl_write(BCHP_NAND_ACC_CONTROL, orig_acc0);
 }
 	
@@ -2116,7 +2119,7 @@ static int brcmnand_handle_false_read_ecc_unc_errors(
 
 #if 1 /* Testing 1 2 3 */
 	/* Disable ECC */
-	acc0 = brcmnand_disable_ecc();
+	acc0 = brcmnand_disable_ecc(chip);
 
 	chip->ctrl_writeAddr(chip, offset, 0);
 	PLATFORM_IOFLUSH_WAR();
@@ -2126,7 +2129,7 @@ static int brcmnand_handle_false_read_ecc_unc_errors(
 	(void) brcmnand_spare_is_valid(mtd, FL_READING, 1);
 	
 	// Restore acc
-	brcmnand_restore_ecc(acc0);
+	brcmnand_restore_ecc(chip, acc0);
 #endif
 
 	for (i = 0; i < 4; i++) {
@@ -2403,7 +2406,7 @@ static int brcmnand_Hamming_WAR(struct mtd_info* mtd, loff_t offset, void* buffe
 	int ret = 0, retries=2;
 	
 	/* Disable ECC */
-	acc0 = brcmnand_disable_ecc();
+	acc0 = brcmnand_disable_ecc(chip);
 
 	while (retries >= 0) {
 		uint32_t intr_status;  
@@ -2486,7 +2489,7 @@ printk("%s: before intr_status=%08x\n", __FUNCTION__, intr_status);
 
 restore_ecc:
 	// Restore acc
-	brcmnand_restore_ecc(acc0);
+	brcmnand_restore_ecc(chip, acc0);
 	return ret;
 }
 #endif
@@ -4083,7 +4086,8 @@ brcmnand_read_page(struct mtd_info *mtd,
 if (gdebug > 3 ) {
 printk("-->%s, page=%0llx\n", __FUNCTION__, page);}
 
-	chip->pagebuf = page;
+	if (likely(outp_oob == BRCMNAND_OOBBUF(chip->buffers) || outp_buf == chip->buffers->databuf))
+		chip->pagebuf = -1LL;
 
 	for (eccstep = 0; eccstep < chip->eccsteps && ret == 0; eccstep++) {
 		ret = brcmnand_posted_read_cache(mtd, &outp_buf[dataRead], 
@@ -4138,7 +4142,8 @@ brcmnand_read_page_oob(struct mtd_info *mtd,
 if (gdebug > 3 ) {
 printk("-->%s, offset=%0llx\n", __FUNCTION__, offset);}
 
-	chip->pagebuf = page;
+	if (unlikely(chip->pagebuf != page && outp_oob == BRCMNAND_OOBBUF(chip->buffers)))
+		chip->pagebuf = -1LL;
 
 	for (eccstep = 0; eccstep < chip->eccsteps && ret == 0; eccstep++) {
 //gdebug=4;
@@ -4353,6 +4358,7 @@ static int brcmnand_refresh_blk(struct mtd_info *mtd, loff_t from)
 
 
 #ifdef CONFIG_MTD_BRCMNAND_USE_ISR
+#error "FIXME pagecache"
 /*
  * EDU ISR Implementation
  */
@@ -4844,7 +4850,7 @@ static int brcmnand_do_read_ops(struct mtd_info *mtd, loff_t from,
 {
 	unsigned int bytes, col;
 	uint64_t realpage;
-	int aligned;
+	int __maybe_unused aligned;
 	struct brcmnand_chip *chip = mtd->priv;
 	struct mtd_ecc_stats stats;
 	//int blkcheck = (1 << (chip->phys_erase_shift - chip->page_shift)) - 1;
@@ -4967,20 +4973,14 @@ static int brcmnand_do_read_ops(struct mtd_info *mtd, loff_t from,
 	{
 		while(1) {
 			bytes = min(mtd->writesize - col, readlen);
-			aligned = (bytes == mtd->writesize);
-			
-			bufpoi = aligned ? buf : chip->buffers->databuf;
+			bufpoi = chip->buffers->databuf;
 
-			ret = chip->read_page(mtd, bufpoi, chip->oob_poi, realpage);
-
+			ret = realpage != chip->pagebuf ? chip->read_page(mtd, bufpoi, chip->oob_poi, realpage) : 0;
 			if (ret < 0)
 				break;
 
-			/* Transfer not aligned data */
-			if (!aligned) {
-				chip->pagebuf = realpage;
-				memcpy(buf, &bufpoi[col], bytes);
-			}
+			chip->pagebuf = realpage;
+			memcpy(buf, &bufpoi[col], bytes);
 
 			buf += bytes;
 
@@ -5155,12 +5155,12 @@ if (gdebug > 3 )
 	chip->oob_poi = BRCMNAND_OOBBUF(chip->buffers);
 
 	while (toBeReadlen > 0) {
-		ret = chip->read_page_oob(mtd, chip->oob_poi, realpage);
+		ret = realpage != chip->pagebuf ? chip->read_page_oob(mtd, chip->oob_poi, realpage) : 0;
 		if (ret) {
 			ops->retlen = readlen;
 			return ret;
 		}
-		
+
 		buf = brcmnand_transfer_oob(chip, buf, ops, ooblen);
 
 		toBeReadlen -= ooblen;
@@ -5543,7 +5543,8 @@ brcmnand_write_page(struct mtd_info *mtd,
 if (gdebug > 3 ) {
 printk("-->%s, offset=%0llx\n", __FUNCTION__, offset);}
 
-	chip->pagebuf = page;
+	if (likely(inp_oob == BRCMNAND_OOBBUF(chip->buffers) || inp_buf == chip->buffers->databuf || page == chip->pagebuf))
+		chip->pagebuf = -1LL;
 
 	for (eccstep = 0; eccstep < chip->eccsteps && ret == 0; eccstep++) {
 		ret = brcmnand_posted_write_cache(mtd, &inp_buf[dataWritten], 
@@ -5871,14 +5872,6 @@ DEBUG(MTD_DEBUG_LEVEL3, "-->%s, offset=%0llx\n", __FUNCTION__, to);
 	//page = realpage & chip->pagemask;
 	blockmask = (1 << (chip->phys_erase_shift - chip->page_shift)) - 1;
 
-	/* Invalidate the page cache, when we write to the cached page */
-	if ((chip->pagebuf !=  -1LL) && 
-		(to <= (chip->pagebuf << chip->page_shift)) &&
-	    	((to + ops->len) > (chip->pagebuf << chip->page_shift) )) 
-	{
-		chip->pagebuf = -1LL;
-	}
-
 	/* THT: Provide buffer for brcmnand_fill_oob */
 	if (unlikely(oob)) {
 		chip->oob_poi = BRCMNAND_OOBBUF(chip->buffers);
@@ -6034,7 +6027,8 @@ static int brcmnand_write_page_oob(struct mtd_info *mtd,
 	int ret = 0;
 	uint64_t offset = page << chip->page_shift;
 
-	chip->pagebuf = page;
+	if (unlikely(inp_oob == BRCMNAND_OOBBUF(chip->buffers) || page == chip->pagebuf))
+		chip->pagebuf = -1LL;
 
 	for (eccstep = 0; eccstep < chip->eccsteps && ret == 0; eccstep++) {
 		ret = brcmnand_posted_write_oob(mtd,  &inp_oob[oobWritten] , 
@@ -6111,10 +6105,6 @@ printk("-->%s, to=%08x, len=%d\n", __FUNCTION__, (uint32_t) to, (int)ops->len);}
 	if (nand_check_wp(mtd))
 		return -EROFS;
 #endif
-
-	/* Invalidate the page cache, if we write to the cached page */
-	if ((int64_t) page == chip->pagebuf)
-		chip->pagebuf = -1LL;
 
 	while (toBeWritten > 0) {
 
@@ -6632,6 +6622,10 @@ if (gdebug > 3 ) {printk(  "%s: Erase past end of device, instr_addr=%016llx, in
 		return -EINVAL;
 	}
 
+	// invalidate the page cache if we erase to the corresponding block
+	addr = chip->pagebuf * chip->pageSize;
+	if (addr >= instr->addr && addr < (instr->addr+instr->len))
+		chip->pagebuf = -1LL;
 
 	instr->fail_addr = 0xffffffffffffffffULL;
 

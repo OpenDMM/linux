@@ -543,13 +543,13 @@ static int brcmnand_scan_block_fast(struct mtd_info *mtd, struct nand_bbt_descr 
 			uint32_t acc0;
 	
 			// Disable ECC
-			acc0 = brcmnand_disable_ecc();
+			acc0 = brcmnand_disable_ecc(this);
 
 			// Re-read the OOB
 			ret = mtd->read_oob(mtd, offs, &ops);
 
 			// Enable ECC back
-			brcmnand_restore_ecc(acc0);
+			brcmnand_restore_ecc(this, acc0);
 		}
 		if (ret)
 			return ret;
@@ -2145,9 +2145,9 @@ PRINTK("%s: gClearBBT=%d, size=%016llx, erasesize=%08x\n",
 				if (res) {
 					uint32_t acc0;
 
-					acc0 = brcmnand_disable_ecc();
+					acc0 = brcmnand_disable_ecc(this);
 					res = this->read_page_oob(mtd, oobbuf, page);
-					brcmnand_restore_ecc(acc0);
+					brcmnand_restore_ecc(this, acc0);
 					// res would always be zero here, unless there is a HW error
 				}
 				
