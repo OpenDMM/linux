@@ -1189,7 +1189,7 @@ tf_read_retry:
 
 	if (*class == ATA_DEV_UNKNOWN) {
 		printk("tf_read status %02x, device %02x, feature %02x, nsect %02x, class %02x %02x %02x\n", tf.command, tf.device, tf.feature, tf.nsect, tf.lbal, tf.lbam, tf.lbah);
-		if (retry_cnt < 40) {
+		if (retry_cnt < 20) {
 			printk("dev_classify try %d failed.. retry\n", retry_cnt);
 			msleep(250);
 			++retry_cnt;
