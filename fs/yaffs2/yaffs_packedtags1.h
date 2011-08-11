@@ -1,5 +1,5 @@
 /*
- * YAFFS: Yet another Flash File System . A NAND-flash specific file system. 
+ * YAFFS: Yet another Flash File System . A NAND-flash specific file system.
  *
  * Copyright (C) 2002-2007 Aleph One Ltd.
  *   for Toby Churchill Ltd and Brightstar Engineering
@@ -32,6 +32,6 @@ typedef struct {
 
 } yaffs_PackedTags1;
 
-void yaffs_PackTags1(yaffs_PackedTags1 * pt, const yaffs_ExtendedTags * t);
-void yaffs_UnpackTags1(yaffs_ExtendedTags * t, const yaffs_PackedTags1 * pt);
+void yaffs_PackTags1(yaffs_PackedTags1 *pt, const yaffs_ExtendedTags *t);
+void yaffs_UnpackTags1(yaffs_ExtendedTags *t, const yaffs_PackedTags1 *pt);
 #endif

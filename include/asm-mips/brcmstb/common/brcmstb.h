@@ -86,6 +86,7 @@
 #include <asm/brcmstb/brcm93563c0/bchp_usb_ctrl.h>
 #include <asm/brcmstb/brcm93563c0/bchp_usb_ehci.h>
 #include <asm/brcmstb/brcm93563c0/bchp_usb_ohci.h>
+#include <asm/brcmstb/brcm93563c0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
 #include <asm/brcmstb/brcm93563c0/bchp_nand.h>
 #include <asm/brcmstb/brcm93563c0/bchp_sun_top_ctrl.h>
 #include <asm/brcmstb/brcm93563c0/bchp_ebi.h>
@@ -118,6 +119,7 @@
 #include <asm/brcmstb/brcm97118a0/board.h>
 #include <asm/brcmstb/brcm97118a0/bchp_irq0.h>
 #include <asm/brcmstb/brcm97118a0/bcmintrnum.h>
+#include <asm/brcmstb/brcm97118a0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
 #include <asm/brcmstb/brcm97118a0/bchp_nand.h>
 #include <asm/brcmstb/brcm97118a0/bchp_sun_top_ctrl.h>
 #include <asm/brcmstb/brcm97118a0/bchp_ebi.h>
@@ -140,6 +142,7 @@
 #include <asm/brcmstb/brcm97118c0/board.h>
 #include <asm/brcmstb/brcm97118c0/bchp_irq0.h>
 #include <asm/brcmstb/brcm97118c0/bcmintrnum.h>
+#include <asm/brcmstb/brcm97118c0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
 #include <asm/brcmstb/brcm97118c0/bchp_nand.h>
 #include <asm/brcmstb/brcm97118c0/bchp_sun_top_ctrl.h>
 #include <asm/brcmstb/brcm97118c0/bchp_ebi.h>
@@ -163,6 +166,7 @@
 #include <asm/brcmstb/brcm97400d0/board.h>
 #include <asm/brcmstb/brcm97400d0/bchp_irq0.h>
 #include <asm/brcmstb/brcm97400d0/bcmintrnum.h>
+#include <asm/brcmstb/brcm97400d0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
 #include <asm/brcmstb/brcm97400d0/bchp_nand.h>
 #include <asm/brcmstb/brcm97400d0/bchp_ebi.h>
 #include <asm/brcmstb/brcm97400d0/bchp_sun_top_ctrl.h>
@@ -188,6 +192,7 @@
 #include <asm/brcmstb/brcm97405b0/board.h>
 #include <asm/brcmstb/brcm97405b0/bchp_irq0.h>
 #include <asm/brcmstb/brcm97405b0/bcmintrnum.h>
+#include <asm/brcmstb/brcm97405b0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
 #include <asm/brcmstb/brcm97405b0/bchp_nand.h>
 #include <asm/brcmstb/brcm97405b0/bchp_ebi.h>
 #include <asm/brcmstb/brcm97405b0/bchp_sun_top_ctrl.h>
@@ -214,6 +219,7 @@
 #include <asm/brcmstb/brcm97405d0/board.h>
 #include <asm/brcmstb/brcm97405d0/bchp_irq0.h>
 #include <asm/brcmstb/brcm97405d0/bcmintrnum.h>
+#include <asm/brcmstb/brcm97405d0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
 #include <asm/brcmstb/brcm97405d0/bchp_nand.h>
 #include <asm/brcmstb/brcm97405d0/bchp_ebi.h>
 #include <asm/brcmstb/brcm97405d0/bchp_sun_top_ctrl.h>
@@ -240,6 +246,7 @@
 #include <asm/brcmstb/brcm97335b0/board.h>
 #include <asm/brcmstb/brcm97335b0/bchp_irq0.h>
 #include <asm/brcmstb/brcm97335b0/bcmintrnum.h>
+#include <asm/brcmstb/brcm97335b0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
 #include <asm/brcmstb/brcm97335b0/bchp_nand.h>
 #include <asm/brcmstb/brcm97335b0/bchp_ebi.h>
 #include <asm/brcmstb/brcm97335b0/bchp_sun_top_ctrl.h>
@@ -277,28 +284,27 @@
 #include <asm/brcmstb/brcm97336a0/bchp_memc_0_ddr.h>
 #include <asm/brcmstb/brcm97336a0/bchp_vcxo_ctl_misc.h>
 
-#elif defined(CONFIG_MIPS_BCM7340A0)
-#include <asm/brcmstb/brcm97340a0/bcmuart.h>
-#include <asm/brcmstb/brcm97340a0/bcmtimer.h>
-#include <asm/brcmstb/brcm97340a0/bcmebi.h>
-#include <asm/brcmstb/brcm97340a0/int1.h>
-#include <asm/brcmstb/brcm97340a0/bchp_pci_cfg.h>
-#include <asm/brcmstb/brcm97340a0/board.h>
-#include <asm/brcmstb/brcm97340a0/bchp_irq0.h>
-#include <asm/brcmstb/brcm97340a0/bcmintrnum.h>
-#include <asm/brcmstb/brcm97340a0/bchp_nand.h>
-#include <asm/brcmstb/brcm97340a0/bchp_ebi.h>
-#include <asm/brcmstb/brcm97340a0/bchp_sun_top_ctrl.h>
-#include <asm/brcmstb/brcm97340a0/bchp_usb_ctrl.h>
-#include <asm/brcmstb/brcm97340a0/bchp_usb_ehci.h>
-#include <asm/brcmstb/brcm97340a0/bchp_usb_ehci1.h>
-#include <asm/brcmstb/brcm97340a0/bchp_usb_ohci.h>
-#include <asm/brcmstb/brcm97340a0/bchp_usb_ohci1.h>
-// #include <asm/brcmstb/brcm97340a0/bchp_pcix_bridge.h>
-#include <asm/brcmstb/brcm97340a0/bchp_clkgen.h>
-#include <asm/brcmstb/brcm97340a0/bchp_bmips4380.h>
-#include <asm/brcmstb/brcm97340a0/bchp_memc_ddr_0.h>
-#include <asm/brcmstb/brcm97340a0/bchp_vcxo_ctl_misc.h>
+#elif defined(CONFIG_MIPS_BCM7340B0)
+#include <asm/brcmstb/brcm97340b0/bcmuart.h>
+#include <asm/brcmstb/brcm97340b0/bcmtimer.h>
+#include <asm/brcmstb/brcm97340b0/bcmebi.h>
+#include <asm/brcmstb/brcm97340b0/int1.h>
+#include <asm/brcmstb/brcm97340b0/bchp_pci_cfg.h>
+#include <asm/brcmstb/brcm97340b0/board.h>
+#include <asm/brcmstb/brcm97340b0/bchp_irq0.h>
+#include <asm/brcmstb/brcm97340b0/bcmintrnum.h>
+#include <asm/brcmstb/brcm97340b0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
+#include <asm/brcmstb/brcm97340b0/bchp_nand.h>
+#include <asm/brcmstb/brcm97340b0/bchp_ebi.h>
+#include <asm/brcmstb/brcm97340b0/bchp_sun_top_ctrl.h>
+#include <asm/brcmstb/brcm97340b0/bchp_usb_ctrl.h>
+#include <asm/brcmstb/brcm97340b0/bchp_usb_ehci.h>
+#include <asm/brcmstb/brcm97340b0/bchp_usb_ehci1.h>
+#include <asm/brcmstb/brcm97340b0/bchp_usb_ohci.h>
+#include <asm/brcmstb/brcm97340b0/bchp_usb_ohci1.h>
+#include <asm/brcmstb/brcm97340b0/bchp_clkgen.h>
+#include <asm/brcmstb/brcm97340b0/bchp_bmips4380.h>
+#include <asm/brcmstb/brcm97340b0/bchp_memc_ddr_0.h>
 
 
 #elif defined(CONFIG_MIPS_BCM7420A0)
@@ -386,6 +392,7 @@
 #include <asm/brcmstb/brcm97325b0/bchp_irq0.h>
 #include <asm/brcmstb/brcm97325b0/bchp_irq1.h>
 #include <asm/brcmstb/brcm97325b0/bcmintrnum.h>
+#include <asm/brcmstb/brcm97325b0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
 #include <asm/brcmstb/brcm97325b0/bchp_nand.h>
 #include <asm/brcmstb/brcm97325b0/bchp_usb_ctrl.h>
 #include <asm/brcmstb/brcm97325b0/bchp_usb_ehci.h>
@@ -406,6 +413,7 @@
 #include <asm/brcmstb/brcm97401c0/board.h>
 #include <asm/brcmstb/brcm97401c0/bchp_irq0.h>
 #include <asm/brcmstb/brcm97401c0/bcmintrnum.h>
+#include <asm/brcmstb/brcm97401c0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
 #include <asm/brcmstb/brcm97401c0/bchp_nand.h>
 #include <asm/brcmstb/brcm97401c0/bchp_ebi.h>
 #include <asm/brcmstb/brcm97401c0/bchp_sun_top_ctrl.h>
@@ -429,6 +437,7 @@
 #include <asm/brcmstb/brcm97403a0/board.h>
 #include <asm/brcmstb/brcm97403a0/bchp_irq0.h>
 #include <asm/brcmstb/brcm97403a0/bcmintrnum.h>
+#include <asm/brcmstb/brcm97403a0/bchp_hif_intr2.h> /* For SWLINUX-1589 WAR */
 #include <asm/brcmstb/brcm97403a0/bchp_nand.h>
 #include <asm/brcmstb/brcm97403a0/bchp_sun_top_ctrl.h>
 #include <asm/brcmstb/brcm97403a0/bchp_ebi.h>
@@ -746,7 +755,7 @@ struct bcmumac_platform_data {
 #else /* CONFIG_MIPS_BCM7420A0 */
 #if defined(BCHP_GENET_UMAC_REG_START)
 #define BRCM_UMAC_0_SUPPORTED	1
-#define BRCM_UMAC_0_REG_START	BCHP_GENET_UMAC_REG_START
+#define BRCM_UMAC_0_REG_START	BCHP_GENET_SYS_REG_START
 #define BRCM_UMAC_0_REG_END	BCHP_GENET_TDMA_REG_END
 #endif
 
