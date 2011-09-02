@@ -6067,6 +6067,14 @@ brcmnand_do_write_oob(struct mtd_info *mtd, loff_t to, struct mtd_oob_ops *ops)
 	int page, status;
 	struct brcmnand_chip *chip = mtd->priv;
 	int toBeWritten, written;
+	int ooblen;
+
+	if (ops->mode == MTD_OOB_AUTO) {
+		ooblen = mtd->ecclayout->oobavail;
+	}
+	else {
+		ooblen = mtd->oobsize;
+	}
 
 	DEBUG(MTD_DEBUG_LEVEL3, "%s: to = 0x%08x, len = %i\n", __FUNCTION__,
 	      (unsigned int)to, (int)ops->len);
@@ -6119,8 +6127,8 @@ printk("-->%s, to=%08x, len=%d\n", __FUNCTION__, (uint32_t) to, (int)ops->len);}
 		return status;
 
 		page++;
-		written += mtd->ecclayout->oobavail;
-		toBeWritten -= mtd->ecclayout->oobavail;
+		written += ooblen;
+		toBeWritten -= ooblen;
 	}
 
 
