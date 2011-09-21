@@ -2269,7 +2269,7 @@ int brcmnand_isbad_raw (struct mtd_info *mtd, loff_t offs)
 	uint8_t	isBadBlock = 0;
 	int i;
 
-	unsigned char oobbuf[64];
+	unsigned char oobbuf[NAND_MAX_OOBSIZE];
 	int numpages;
 	/* THT: This __can__ be a 36bit integer (NAND controller address space is 48bit wide, minus
 	 * page size of 2*12, therefore 36bit max
@@ -2292,7 +2292,7 @@ printk("-->%s(offs=%llx\n", __FUNCTION__, offs);
 		numpages = 1;
 	}
 
-printk("%s: 20\n", __FUNCTION__);
+PRINTK("%s: 20\n", __FUNCTION__);
 
 	if (!NAND_IS_MLC(this)) { // SLC: First and 2nd page
 		dir = 1;
@@ -2305,13 +2305,16 @@ printk("%s: 20\n", __FUNCTION__);
 		page = blockPage + pagesPerBlock - 1; // last page of block
 	}
 
-printk("%s: 20\n", __FUNCTION__);
+PRINTK("%s: 30\n", __FUNCTION__);
 	
 	for (i=0; i<numpages; i++, page += i*dir) {
 		int res;
 		//int retlen = 0;
 
-printk("%s: 50 calling read_page_oob=%p\n", __FUNCTION__, this->read_page_oob);
+PRINTK("%s: 50 calling read_page_oob=%p, offset=%llx\n", __FUNCTION__, this->read_page_oob, 
+	page << this->page_shift);
+
+//gdebug=4;
 		res = this->read_page_oob(mtd, oobbuf, page);
 		if (!res) {
 			if (check_short_pattern (oobbuf, this->badblock_pattern)) {
