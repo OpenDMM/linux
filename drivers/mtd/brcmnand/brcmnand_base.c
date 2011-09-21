@@ -8600,6 +8600,8 @@ printk("sun_top_strap=%08x\n", BDEV_RD(BCHP_SUN_TOP_CTRL_STRAP_VALUE_0));
 			acc_control = check_n_disable_wr_preempt(acc_control);
 #endif
 
+/* 7020HD 4K SLC nand doesn't like this !!!!!!!!!!!! */
+#if 0
 			/*
 			 * Some new SLC flashes have 4KB page size, and need Partial Page Prog disabled
 			 * to satisfy NOP requirement, usually == 4
@@ -8617,6 +8619,7 @@ printk("sun_top_strap=%08x\n", BDEV_RD(BCHP_SUN_TOP_CTRL_STRAP_VALUE_0));
 			} else {
 				printk("SLC flash: Corrected ACC_CONTROL = %08lx from %08lx\n", acc_control, org_acc_control);
 			}
+#endif
 		}
 
 
