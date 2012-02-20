@@ -315,6 +315,7 @@ static struct usb_device_id id_table_combined [] = {
 	{ USB_DEVICE(FTDI_VID, FTDI_8U232AM_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_8U232AM_ALT_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_8U2232C_PID) },
+	{ USB_DEVICE(FTDI_VID, FTDI_4232H_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_MICRO_CHAMELEON_PID) },
 	{ USB_DEVICE(FTDI_VID, FTDI_RELAIS_PID) },
 	{ USB_DEVICE(INTERBIOMETRICS_VID, INTERBIOMETRICS_IOBOARD_PID) },
@@ -977,10 +978,15 @@ static void ftdi_determine_type(struct usb_serial_port *port)
 		/* Determine interface code. */
 		inter = serial->interface->altsetting->desc.bInterfaceNumber;
 		if (inter == 0) {
-			priv->interface = PIT_SIOA;
-		} else {
-			priv->interface = PIT_SIOB;
+			priv->interface = INTERFACE_A;
+		} else  if (inter == 1) {
+			priv->interface = INTERFACE_B;
+		} else  if (inter == 2) {
+			priv->interface = INTERFACE_C;
+		} else  if (inter == 3) {
+			priv->interface = INTERFACE_D;
 		}
+
 		/* BM-type devices have a bug where bcdDevice gets set
 		 * to 0x200 when iSerialNumber is 0.  */
 		if (version < 0x500) {

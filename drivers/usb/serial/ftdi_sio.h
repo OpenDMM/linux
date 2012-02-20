@@ -27,6 +27,7 @@
 #define FTDI_8U232AM_PID 0x6001 /* Similar device to SIO above */
 #define FTDI_8U232AM_ALT_PID 0x6006 /* FTDI's alternate PID for above */
 #define FTDI_8U2232C_PID 0x6010 /* Dual channel device */
+#define FTDI_4232H_PID	0x6011  /* Quad channel device */
 #define FTDI_RELAIS_PID	0xFA10  /* Relais device from Rudolf Gugler */
 #define FTDI_NF_RIC_VID	0x0DCD	/* Vendor Id */
 #define FTDI_NF_RIC_PID	0x0001	/* Product Id */
@@ -495,12 +496,11 @@
  *
  */
 
-/* Port Identifier Table */
-#define PIT_DEFAULT 		0 /* SIOA */
-#define PIT_SIOA		1 /* SIOA */
-/* The device this driver is tested with one has only one port */
-#define PIT_SIOB		2 /* SIOB */
-#define PIT_PARALLEL		3 /* Parallel */
+/* Interface indices for FT2232, FT2232H and FT4232H devices */
+#define INTERFACE_A		1
+#define INTERFACE_B		2
+#define INTERFACE_C		3
+#define INTERFACE_D		4
 
 /* FTDI_SIO_RESET */
 #define FTDI_SIO_RESET_REQUEST FTDI_SIO_RESET
